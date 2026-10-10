@@ -4,7 +4,7 @@
   <div>
     <p class="crumbs"><a href="/">Projects</a> <span class="crumb-sep">/</span> <span><%= project.name %></span></p>
     <h1><%= project.name %></h1>
-    <p class="muted"><%= project.chapters.length %> chapter<%= project.chapters.length === 1 ? '' : 's' %></p>
+    <p class="muted"><%= project.chapters.length %> chapter<%= project.chapters.length === 1 ? '' : 's' %> · <%= project.characters.length %> character<%= project.characters.length === 1 ? '' : 's' %><% if (project.platform) { %> · 📖 <%= project.platform %><% } %></p>
   </div>
 </section>
 
@@ -42,5 +42,91 @@
     </div>
   <% }) %>
 </div>
+
+<!-- ---------- Source info (credits / end card / description) ---------- -->
+<section class="card source-card" id="source">
+  <div class="card-head">
+    <h2>📖 Official Source <span class="muted small-note">— used in the video end card and the YouTube description credit block</span></h2>
+  </div>
+  <form method="POST" action="/projects/<%= project.id %>/info" class="source-form">
+    <label><span>Author / Artist</span><input type="text" name="author" value="<%= project.author || '' %>" placeholder="e.g. Shin Hwa-jin" /></label>
+    <label><span>Official platform</span>
+      <input type="text" name="platform" value="<%= project.platform || '' %>" list="platforms" placeholder="WEBTOON, Tapas, KakaoPage…" />
+      <datalist id="platforms">
+        <option value="WEBTOON"></option><option value="Tapas"></option><option value="Tappytoon"></option><option value="KakaoPage"></option>
+        <option value="Naver Series"></option><option value="Lezhin"></option><option value="Manta"></option><option value="Pocket Comics"></option>
+        <option value="Bilibili Comics"></option><option value="Toomics"></option>
+      </datalist>
+    </label>
+    <label><span>Official URL <span class="muted">(never a pirate/aggregator link)</span></span><input type="url" name="official_url" value="<%= project.official_url || '' %>" placeholder="https://www.webtoons.com/…" /></label>
+    <button type="submit" class="btn primary small">💾 Save</button>
+  </form>
+  <% if (!project.platform) { %>
+    <p class="muted small-note" style="margin-top:10px">⚠️ Not set yet — the policy checklist on every chapter will keep warning until the official platform is filled in.</p>
+  <% } %>
+</section>
+
+<!-- ---------- Character roster ---------- -->
+<section class="card char-card" id="characters">
+  <div class="card-head">
+    <h2>👥 Character Roster <span class="count-chip"><%= project.characters.length %></span></h2>
+    <span class="muted small-note">Auto-filled after every generate · names here are forced into every chapter's script</span>
+  </div>
+
+  <% if (project.characters.length === 0) { %>
+    <p class="muted">No characters yet. Generate a chapter script and Gemini will detect them automatically, or add one manually below.</p>
+  <% } %>
+
+  <div class="char-list">
+    <% project.characters.forEach(function (ch) { %>
+      <details class="char-item">
+        <summary>
+          <span class="char-name"><%= ch.name %></span>
+          <% if (ch.role) { %><span class="badge char-role <%= ch.role.toLowerCase() %>"><%= ch.role %></span><% } %>
+          <% if (ch.aliases) { %><span class="muted char-alias">aka <%= ch.aliases %></span><% } %>
+          <% if (ch.relationships) { %><span class="muted char-rel">· <%= ch.relationships.length > 70 ? ch.relationships.slice(0, 68) + '…' : ch.relationships %></span><% } %>
+          <span class="char-edit-hint muted">✏️ edit</span>
+        </summary>
+        <form method="POST" action="/projects/<%= project.id %>/characters/<%= ch.id %>/update" class="char-form">
+          <label><span>Name <span class="muted">(used in every script)</span></span><input type="text" name="name" value="<%= ch.name %>" required /></label>
+          <label><span>Aliases <span class="muted">(comma-separated — other spellings)</span></span><input type="text" name="aliases" value="<%= ch.aliases %>" placeholder="Hyeon, Ha-Hyun" /></label>
+          <label><span>Role</span>
+            <select name="role">
+              <% ['', 'hero', 'villain', 'side'].forEach(function (r) { %>
+                <option value="<%= r %>" <%= (ch.role || '').toLowerCase() === r ? 'selected' : '' %>><%= r || '— none —' %></option>
+              <% }) %>
+              <% if (ch.role && !['hero','villain','side'].includes(ch.role.toLowerCase())) { %><option value="<%= ch.role %>" selected><%= ch.role %></option><% } %>
+            </select>
+          </label>
+          <label><span>Appearance <span class="muted">(English — how Gemini recognises them)</span></span><input type="text" name="look" value="<%= ch.look %>" placeholder="long black hair, red robe, scar on left cheek" /></label>
+          <label class="char-wide"><span>Relationships <span class="muted">(used as "Hyeon ki ammi", "uska beta"…)</span></span><input type="text" name="relationships" value="<%= ch.relationships %>" placeholder="Mother of Ha Hyeon; daughter of Namgung Muryong" /></label>
+          <div class="actions">
+            <button type="submit" class="btn primary small">💾 Save</button>
+            <button type="submit" class="btn ghost-danger small" formaction="/projects/<%= project.id %>/characters/<%= ch.id %>/delete" formnovalidate onclick="return confirm('Remove <%= ch.name.replace(/'/g, '') %> from the roster?')">🗑 Remove</button>
+          </div>
+        </form>
+      </details>
+    <% }) %>
+  </div>
+
+  <details class="char-add">
+    <summary class="btn small">➕ Add character manually</summary>
+    <form method="POST" action="/projects/<%= project.id %>/characters" class="char-form">
+      <label><span>Name</span><input type="text" name="name" required placeholder="Namgung Hyeon" /></label>
+      <label><span>Aliases</span><input type="text" name="aliases" placeholder="Hyeon, Ha-Hyun" /></label>
+      <label><span>Role</span>
+        <select name="role">
+          <option value="">— none —</option>
+          <option value="hero">hero</option>
+          <option value="villain">villain</option>
+          <option value="side">side</option>
+        </select>
+      </label>
+      <label><span>Appearance</span><input type="text" name="look" placeholder="short description in English" /></label>
+      <label class="char-wide"><span>Relationships</span><input type="text" name="relationships" placeholder="Son of …; grandson of …" /></label>
+      <button type="submit" class="btn primary small">➕ Add</button>
+    </form>
+  </details>
+</section>
 
 <%- include('partials/foot') %>

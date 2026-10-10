@@ -149,6 +149,57 @@
   </div>
 </div>
 
+<!-- ---------- Voiceover & Video ---------- -->
+<section class="card media-card" id="media">
+  <div class="card-head">
+    <h2>🎬 Voiceover &amp; Video</h2>
+    <span class="muted small-note" id="mediaSummary"></span>
+  </div>
+  <div id="flagsBox" class="alert warn hidden"></div>
+
+  <div class="media-grid">
+    <div class="media-col">
+      <h3>🎙️ Voiceover <span class="model-chip" id="ttsChip"></span></h3>
+      <p class="media-note muted" id="ttsInfo"></p>
+      <div class="actions">
+        <button id="ttsBtn" class="btn primary">🎙️ Generate Voiceover</button>
+        <a id="mp3Link" class="btn hidden" href="/projects/<%= project.id %>/chapters/<%= chapter.id %>/download/mp3">⬇️ MP3</a>
+      </div>
+      <div id="ttsProgress" class="progress hidden"><div class="progress-bar"><div class="progress-fill"></div></div><span class="progress-msg muted"></span></div>
+      <audio id="ttsAudio" controls class="hidden" preload="none"></audio>
+    </div>
+
+    <div class="media-col">
+      <h3>🎞️ Video <span class="model-chip" id="videoChip"></span></h3>
+      <p class="media-note muted" id="videoInfo"></p>
+      <div class="actions">
+        <button id="videoBtn" class="btn primary">🎞️ Render Video</button>
+        <a id="mp4Link" class="btn hidden" href="/projects/<%= project.id %>/chapters/<%= chapter.id %>/download/mp4">⬇️ MP4</a>
+        <a id="srtLink" class="btn hidden" href="/projects/<%= project.id %>/chapters/<%= chapter.id %>/download/srt">⬇️ Captions (.srt)</a>
+        <a id="descLink" class="btn hidden" href="/projects/<%= project.id %>/chapters/<%= chapter.id %>/download/description">⬇️ Title + Description</a>
+      </div>
+      <div id="videoProgress" class="progress hidden"><div class="progress-bar"><div class="progress-fill"></div></div><span class="progress-msg muted"></span></div>
+      <video id="videoPlayer" controls class="hidden" preload="none"></video>
+    </div>
+  </div>
+
+  <details class="publish-box" open>
+    <summary>✅ Pre-upload checklist — copyright &amp; YouTube policy (Oct 2026)</summary>
+    <ul class="checklist" id="checklist"></ul>
+    <div class="listing">
+      <label>Suggested title</label>
+      <input type="text" id="ytTitle" readonly />
+      <label>Suggested description (credit block included)</label>
+      <textarea id="ytDesc" readonly></textarea>
+      <div class="actions" style="margin-top:4px">
+        <button class="btn small" id="copyTitle">📋 Copy title</button>
+        <button class="btn small" id="copyDesc">📋 Copy description</button>
+      </div>
+    </div>
+    <p class="risk-note">This checklist lowers risk, it does not remove it. Every panel is copyrighted; publishers enforce by manual DMCA strikes (not Content ID claims), and 3 strikes in 90 days ends a channel. WEBTOON is the only platform with published fan-video rules (≤20 panels or 50% of a free, official episode, with credit). Full research notes: <code>POLICY.md</code>.</p>
+  </details>
+</section>
+
 <script>
   const MAX_IMAGES = 60;
   const CURRENT_COUNT = <%= chapter.images.length %>;
@@ -271,6 +322,7 @@
       // Token stats + quota live update
       if (data.tokenUsage) refreshTokenStats(data.tokenUsage);
       if (data.quota) renderQuota(data.quota);
+      if (data.media) renderMedia(data.media);
     } catch (err) {
       showStatus('❌ ' + err.message, 'err');
       toast('❌ Generation failed — see details above', 'err');
@@ -347,7 +399,165 @@
     });
     const data = await res.json();
     toast(data.ok ? '💾 Saved!' : '❌ Save failed', data.ok ? 'done' : 'err');
+    if (data.media) renderMedia(data.media);
   });
+
+  // ================= Voiceover & Video =================
+  let media = <%- JSON.stringify(media).replace(/</g, '\\u003c') %>;
+  let pollTimer = null;
+  let lastJobs = { voiceover: null, video: null };
+  const $ = (id) => document.getElementById(id);
+  const fmtSec = (s) => { s = Math.round(s || 0); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); };
+  const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+  function setProgress(boxId, job) {
+    const box = $(boxId);
+    if (!job || job.status !== 'running') { box.classList.add('hidden'); return; }
+    box.classList.remove('hidden');
+    const fill = box.querySelector('.progress-fill');
+    if (job.total) { fill.classList.remove('indeterminate'); fill.style.width = Math.round(job.step / job.total * 100) + '%'; }
+    else { fill.classList.add('indeterminate'); }
+    box.querySelector('.progress-msg').textContent = job.message + ' · ' + fmtSec(job.elapsedSec) + ' elapsed';
+  }
+
+  function ck(state, title, detail) {
+    const icon = { ok: '✅', warn: '⚠️', bad: '⛔', info: 'ℹ️' }[state] || 'ℹ️';
+    return `<li class="${state}"><span class="ck">${icon}</span><span><strong>${esc(title)}</strong>${detail ? ' — ' + esc(detail) : ''}</span></li>`;
+  }
+
+  function renderMedia(m) {
+    if (!m) return;
+    media = m;
+    const s = m.script, st = m.settings;
+    $('mediaSummary').textContent = s.hasScript
+      ? `${s.sections} section${s.sections === 1 ? '' : 's'} · ${s.images} images · ${s.chars.toLocaleString()} chars ≈ ${s.estMinutes} min of narration`
+      : 'Generate the script first';
+
+    // Flags / warnings
+    const flagMsgs = [];
+    if (m.flags && m.flags.watermarks && m.flags.watermarks.length)
+      flagMsgs.push('⛔ Gemini saw site watermark(s) in the images: <strong>' + esc(m.flags.watermarks.join(', ')) + '</strong>. Pirate-aggregator images weaken any fair-use/good-faith defence and tie the video to piracy — prefer official-source images.');
+    (s.warnings || []).forEach((w) => flagMsgs.push('⚠️ ' + esc(w)));
+    if (m.audio && m.audio.warnings) m.audio.warnings.forEach((w) => flagMsgs.push('🎙️ ' + esc(w)));
+    const fb = $('flagsBox');
+    fb.innerHTML = flagMsgs.join('<br>');
+    fb.classList.toggle('hidden', !flagMsgs.length);
+
+    const vj = m.jobs.voiceover, dj = m.jobs.video;
+    const running = (vj && vj.status === 'running') || (dj && dj.status === 'running');
+
+    // ---- Voiceover ----
+    $('ttsChip').textContent = st.ttsModel + ' · ' + st.ttsVoice;
+    const ttsBtn = $('ttsBtn');
+    ttsBtn.disabled = running || !s.hasScript || !st.hasKeys;
+    ttsBtn.textContent = m.audio ? '🔄 Regenerate Voiceover' : '🎙️ Generate Voiceover';
+    const ttsInfo = $('ttsInfo');
+    ttsInfo.className = 'media-note muted';
+    if (vj && vj.status === 'error') { ttsInfo.textContent = '❌ ' + vj.error; ttsInfo.className = 'media-note status err'; }
+    else if (m.audio) {
+      const reqs = m.audio.requests || m.audio.chunks;
+      ttsInfo.textContent = `${fmtSec(m.audio.totalSec)} · ${reqs} TTS request${reqs === 1 ? '' : 's'} · ${m.audio.voice} (${m.audio.model})` +
+        (m.audio.stale ? ' · ⚠️ script or voice settings changed since — regenerate' : '') +
+        (m.audio.warnings && m.audio.warnings.length ? ` · ⚠️ ${m.audio.warnings.length} warning(s) above` : '');
+      if (m.audio.stale || (m.audio.warnings && m.audio.warnings.length)) ttsInfo.className = 'media-note stale';
+    } else ttsInfo.textContent = s.hasScript ? (st.hasKeys ? `Sections are read in order with a pause between them; ~${Math.max(1, Math.ceil(s.chars / st.ttsMaxChars))} TTS request(s) for this chapter.` : 'Add an API key in Settings first.') : 'Generate the script first.';
+    const tq = st.ttsQuota;
+    if (tq) {
+      const need = Math.max(1, Math.ceil(s.chars / st.ttsMaxChars));
+      const low = tq.totalRemaining < need;
+      ttsInfo.textContent += ` · TTS quota today: ${tq.totalRemaining}/${tq.keys.length * tq.dailyLimit} left (${tq.keys.map((k) => k.remaining).join('+')})` + (low && s.hasScript ? ' ⚠️ not enough for this chapter — resets midnight Pacific' : '');
+      if (low && s.hasScript) ttsInfo.className = 'media-note stale';
+    }
+    const audioEl = $('ttsAudio');
+    if (m.audio) { if (audioEl.dataset.src !== m.audio.url) { audioEl.src = m.audio.url; audioEl.dataset.src = m.audio.url; } audioEl.classList.remove('hidden'); $('mp3Link').classList.remove('hidden'); }
+    else { audioEl.classList.add('hidden'); $('mp3Link').classList.add('hidden'); }
+    setProgress('ttsProgress', vj);
+
+    // ---- Video ----
+    $('videoChip').textContent = (st.videoPreset === 'portrait' ? '1080×1920' : '1920×1080') + ' · ' + st.coveragePercent + '% coverage';
+    const videoBtn = $('videoBtn');
+    videoBtn.disabled = running || !m.audio || m.audio.stale || !s.images;
+    videoBtn.textContent = m.video ? '🔄 Re-render Video' : '🎞️ Render Video';
+    const videoInfo = $('videoInfo');
+    videoInfo.className = 'media-note muted';
+    if (dj && dj.status === 'error') { videoInfo.textContent = '❌ ' + dj.error; videoInfo.className = 'media-note status err'; }
+    else if (!m.audio) videoInfo.textContent = 'Generate the voiceover first — the video is cut to its timing.';
+    else if (m.audio.stale) { videoInfo.textContent = '⚠️ Voiceover is out of date — regenerate it before rendering.'; videoInfo.className = 'media-note stale'; }
+    else if (m.video) {
+      videoInfo.textContent = `${fmtSec(m.video.durationSec)} · ${m.video.preset} · ~${m.video.avgShownPercent ?? '?'}% of the chapter's panels shown · no music` +
+        (m.video.stale ? ' · ⚠️ settings/script changed since — re-render' : '');
+      if (m.video.stale) videoInfo.className = 'media-note stale';
+    } else videoInfo.textContent = 'Renders locally with ffmpeg (≈ real-time or faster). Voiceover only, no music.';
+    const videoEl = $('videoPlayer');
+    videoEl.classList.toggle('portrait', st.videoPreset === 'portrait');
+    if (m.video) {
+      if (videoEl.dataset.src !== m.video.url) { videoEl.src = m.video.url; videoEl.dataset.src = m.video.url; }
+      videoEl.classList.remove('hidden');
+      ['mp4Link', 'srtLink', 'descLink'].forEach((id) => $(id).classList.remove('hidden'));
+    } else {
+      videoEl.classList.add('hidden');
+      ['mp4Link', 'srtLink', 'descLink'].forEach((id) => $(id).classList.add('hidden'));
+    }
+    setProgress('videoProgress', dj);
+
+    // ---- Checklist ----
+    const items = [];
+    items.push(ck(st.commentaryMode === 'on' ? 'ok' : 'warn', 'Script = own words + narrator commentary',
+      st.commentaryMode === 'on' ? 'Commentary layer ON (hook, reactions/analysis, closing take) — regenerate old scripts to apply it.' : 'Commentary layer is OFF — pure retelling is treated as reused/non-transformative. Turn it on in Settings or add commentary by hand.'));
+    items.push(ck(st.coveragePercent <= 50 ? 'ok' : 'warn', `Strip coverage ${st.coveragePercent}%`,
+      st.coveragePercent <= 50 ? "≤50% stays within WEBTOON's fan-video limit (≤20 panels or 50% of the episode)." : 'Above 50% — exceeds the only published publisher limit (WEBTOON). Lower it in Settings.'));
+    items.push(ck(m.project.platform ? 'ok' : 'warn', 'Official source credited',
+      m.project.platform ? `End card + description point to ${m.project.platform}${m.project.official_url ? ' (' + m.project.official_url + ')' : ''}.` : 'Set the official platform/URL on the project page (required by WEBTOON rules; never link aggregators).'));
+    if (m.flags && m.flags.watermarks && m.flags.watermarks.length) items.push(ck('bad', 'Aggregator watermark in images: ' + m.flags.watermarks.join(', '), 'Use free, official-platform episodes only. Cropping a watermark does not change the legal status.'));
+    else if (m.flags && m.flags.watermarks) items.push(ck('ok', 'No site watermark reported', 'Gemini saw no website/scanlation credit in the images.'));
+    else items.push(ck('info', 'Watermark scan not run yet', 'Regenerate the script once — Gemini now reports any site watermark it sees in the images.'));
+    items.push(ck('info', 'Free episode only', 'Do not recap Fast Pass / Daily Pass / paywalled or early-access chapters — only episodes free on the official platform.'));
+    items.push(ck('ok', 'No background music', 'Add music only from the YouTube Audio Library (Content ID-safe); CC-BY tracks need a credit line.'));
+    items.push(ck('info', 'AI disclosure: not required', 'Generic TTS over drawn panels is not "realistic altered content". Ticking it anyway has no monetization cost.'));
+    items.push(ck('info', 'Audience: not made for kids', 'Choose "No, it\'s not made for kids" on upload.'));
+    (m.listing.warnings || []).forEach((w) => items.push(ck('warn', w)));
+    items.push(ck('info', 'Keep manifest.json', 'Saved with every render: source, coverage %, voice model, script size — evidence if you ever need to dispute a claim.'));
+    $('checklist').innerHTML = items.join('');
+    $('ytTitle').value = m.listing.title;
+    $('ytDesc').value = m.listing.description;
+
+    // ---- Transitions → toasts ----
+    for (const t of ['voiceover', 'video']) {
+      const prev = lastJobs[t], cur = m.jobs[t];
+      if (prev && prev.status === 'running' && cur && cur.status === 'done') toast(t === 'voiceover' ? '🎙️ Voiceover ready!' : '🎞️ Video ready!', 'done');
+      if (prev && prev.status === 'running' && cur && cur.status === 'error') toast('❌ ' + t + ' failed — see details', 'err');
+      lastJobs[t] = cur;
+    }
+    if (running && !pollTimer) pollTimer = setInterval(pollMedia, 2000);
+    if (!running && pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+  }
+
+  async function pollMedia() {
+    try {
+      const res = await fetch(baseUrl + '/media');
+      const data = await res.json();
+      if (data.ok) renderMedia(data);
+    } catch {}
+  }
+
+  async function startJob(kind) {
+    try {
+      const res = await fetch(baseUrl + '/' + kind, { method: 'POST' });
+      const data = await res.json();
+      if (!data.ok) throw new Error(data.error || 'Could not start');
+      toast(kind === 'voiceover' ? '🎙️ Generating voiceover…' : '🎞️ Rendering video…', 'gen');
+      renderMedia(data.media);
+    } catch (err) {
+      toast('❌ ' + err.message, 'err');
+    }
+  }
+  $('ttsBtn').addEventListener('click', () => startJob('voiceover'));
+  $('videoBtn').addEventListener('click', () => startJob('video'));
+  $('copyTitle').addEventListener('click', async () => { await navigator.clipboard.writeText($('ytTitle').value); toast('📋 Title copied', 'done'); });
+  $('copyDesc').addEventListener('click', async () => { await navigator.clipboard.writeText($('ytDesc').value); toast('📋 Description copied', 'done'); });
+
+  lastJobs = { voiceover: media && media.jobs.voiceover, video: media && media.jobs.video };
+  renderMedia(media);
 </script>
 
 <%- include('partials/foot') %>

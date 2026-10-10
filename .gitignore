@@ -12,6 +12,9 @@ data/
 # Uploaded manhwa chapter images (copyrighted + bhaari)
 uploads/
 
+# Rendered voiceovers / videos (bhaari, regenerate ho sakte hain)
+output/
+
 # ---------- Secrets / environment ----------
 .env
 .env.*

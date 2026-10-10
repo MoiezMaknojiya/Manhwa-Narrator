@@ -3,7 +3,7 @@
 <section class="hero">
   <div>
     <h1>⚙️ Settings</h1>
-    <p class="muted">Google AI (Gemini) API keys, model and daily limit.</p>
+    <p class="muted">Google AI (Gemini) API keys, script model, voiceover and video options.</p>
   </div>
 </section>
 
@@ -25,7 +25,7 @@
 
   <div class="settings-grid">
     <label>
-      <span>Model</span>
+      <span>Script model</span>
       <select name="model" id="modelSelect">
         <% const modelLabels = { 'gemini-3.8-flash': ' — recommended (FREE)', 'gemini-2.5-flash': ' — backup (FREE)' }; %>
         <% const models = Object.keys(modelLabels); %>
@@ -36,8 +36,8 @@
           <option value="<%= settings.model %>" selected><%= settings.model %> (custom)</option>
         <% } %>
       </select>
-      <button type="button" class="btn small" id="loadModels" style="margin-top: 8px;">🔄 Load Models From Google</button>
-      <span id="modelsStatus" class="muted" style="font-size: 0.8rem;"></span>
+      <button type="button" class="btn small load-models" data-target="modelSelect" data-tts="0" style="margin-top: 8px;">🔄 Load Models From Google</button>
+      <span class="muted models-status" style="font-size: 0.8rem;"></span>
     </label>
 
     <label>
@@ -49,42 +49,145 @@
 
   <small class="muted">Both models work on free keys. ⚠️ Pro models (like gemini-3.1-pro-preview) require paid billing — they return 429 on free keys, which is why they're not listed. "Load Models" fetches the live list your key can actually access.</small>
 
+  <!-- ---------- Script policy ---------- -->
+  <div class="settings-section">
+    <h2>📝 Script policy</h2>
+    <p class="muted small-note">The base prompt is locked in <code><%= promptFile %></code> (read fresh on every generate). The commentary layer is appended from <code>prompts/commentary-addon.md</code>.</p>
+    <label class="toggle">
+      <input type="checkbox" name="commentaryMode" value="on" <%= settings.commentaryMode === 'on' ? 'checked' : '' %> />
+      <span>Commentary layer ON — hook, narrator's own reactions/analysis every 2-3 images, closing take.</span>
+    </label>
+    <small class="muted">Why: YouTube's "inauthentic/reused content" rule and 2026 court rulings treat pure retelling as non-transformative. Own-perspective commentary is the single strongest signal of original content. Keep it ON unless you add commentary by hand.</small>
+  </div>
+
+  <!-- ---------- Voiceover ---------- -->
+  <div class="settings-section">
+    <h2>🎙️ Voiceover (Gemini TTS)</h2>
+    <p class="muted small-note">Uses the same API keys (with auto-switch). TTS has its own quota, separate from the script model.</p>
+    <div class="settings-grid">
+      <label>
+        <span>TTS model</span>
+        <select name="ttsModel" id="ttsModelSelect">
+          <% const ttsModels = ['gemini-3.8-flash-tts', 'gemini-3.8-flash-lite-tts', 'gemini-3.1-flash-tts-preview', 'gemini-2.5-flash-preview-tts']; %>
+          <% ttsModels.forEach(function (m) { %>
+            <option value="<%= m %>" <%= settings.ttsModel === m ? 'selected' : '' %>><%= m %><%= m === 'gemini-3.8-flash-tts' ? ' — recommended' : (m.includes('lite') ? ' — faster/cheaper' : '') %></option>
+          <% }) %>
+          <% if (!ttsModels.includes(settings.ttsModel)) { %><option value="<%= settings.ttsModel %>" selected><%= settings.ttsModel %> (custom)</option><% } %>
+        </select>
+        <button type="button" class="btn small load-models" data-target="ttsModelSelect" data-tts="1" style="margin-top: 8px;">🔄 Load TTS Models</button>
+        <span class="muted models-status" style="font-size: 0.8rem;"></span>
+      </label>
+      <label>
+        <span>Voice</span>
+        <select name="ttsVoice">
+          <% voices.forEach(function (v) { %>
+            <option value="<%= v.name %>" <%= settings.ttsVoice === v.name ? 'selected' : '' %>><%= v.name %> — <%= v.tone %></option>
+          <% }) %>
+        </select>
+        <small class="muted">Charon (informative) / Fenrir (excitable) / Puck (upbeat) suit recap narration. Preview voices in <a href="https://aistudio.google.com/generate-speech" target="_blank" rel="noopener">AI Studio</a>.</small>
+      </label>
+      <label>
+        <span>TTS daily limit <span class="muted">(per key, per day)</span></span>
+        <input type="number" name="ttsDailyLimit" value="<%= settings.ttsDailyLimit %>" min="1" max="100000" />
+        <small class="muted">Google's free tier allows <strong>10 TTS requests/day per key</strong> (Oct 2026). With 3 keys that is ~30/day ≈ 4 chapters. The app switches keys automatically when one runs out.</small>
+      </label>
+      <label>
+        <span>Max characters per TTS request</span>
+        <input type="number" name="ttsMaxChars" value="<%= settings.ttsMaxChars %>" min="800" max="6000" step="100" />
+        <small class="muted">Fewer requests = less quota. Max 4 sections per request. A 12k-char chapter ≈ 6-7 requests at 2000. If a chunk comes back too short (TTS skipped text) it is retried, then split per section automatically.</small>
+      </label>
+    </div>
+    <label>
+      <span>Delivery style <span class="muted">(sent as style metadata — never spoken aloud)</span></span>
+      <input type="text" name="ttsStyle" value="<%= settings.ttsStyle %>" placeholder="Energetic, dramatic YouTube storyteller…" />
+    </label>
+  </div>
+
+  <!-- ---------- Video ---------- -->
+  <div class="settings-section">
+    <h2>🎞️ Video</h2>
+    <p class="muted small-note">Rendered locally with bundled ffmpeg — no music, voiceover only. Add music later in your editor from the YouTube Audio Library only.</p>
+    <div class="settings-grid three">
+      <label>
+        <span>Format</span>
+        <select name="videoPreset">
+          <option value="landscape" <%= settings.videoPreset === 'landscape' ? 'selected' : '' %>>Landscape 1920×1080 (YouTube)</option>
+          <option value="portrait" <%= settings.videoPreset === 'portrait' ? 'selected' : '' %>>Portrait 1080×1920 (Shorts/Reels)</option>
+        </select>
+      </label>
+      <label>
+        <span>Strip coverage <span class="muted">(% of each strip shown)</span></span>
+        <input type="number" name="coveragePercent" value="<%= settings.coveragePercent %>" min="20" max="100" step="5" />
+        <small class="muted">≤ 50 keeps within WEBTOON's fan-video rule ("max 20 panels or 50% of the episode, whichever is less"). 100 = full scroll (highest copyright risk).</small>
+      </label>
+      <label>
+        <span>Channel watermark text</span>
+        <input type="text" name="channelName" value="<%= settings.channelName %>" maxlength="60" placeholder="Your channel name" />
+      </label>
+    </div>
+    <div class="settings-grid three">
+      <label>
+        <span>FPS</span>
+        <input type="number" name="videoFps" value="<%= settings.videoFps %>" min="24" max="60" />
+      </label>
+      <label>
+        <span>Quality (x264 CRF) <span class="muted">18 = best/big · 28 = small</span></span>
+        <input type="number" name="videoQuality" value="<%= settings.videoQuality %>" min="16" max="30" />
+      </label>
+      <label>
+        <span>Hold at start/end of a scroll (sec)</span>
+        <input type="number" name="holdSec" value="<%= settings.holdSec %>" min="0" max="2" step="0.1" />
+      </label>
+    </div>
+    <div class="settings-grid">
+      <label>
+        <span>Cut from TOP of the first image (px)</span>
+        <input type="number" name="trimFirstTop" value="<%= settings.trimFirstTop %>" min="0" max="5000" />
+        <small class="muted">Removes site banners at the start of a chapter. Cropping a watermark does not make an aggregator image legal — prefer official-source images.</small>
+      </label>
+      <label>
+        <span>Cut from BOTTOM of the last image (px)</span>
+        <input type="number" name="trimLastBottom" value="<%= settings.trimLastBottom %>" min="0" max="5000" />
+      </label>
+    </div>
+  </div>
+
   <div class="actions">
     <button type="submit" class="btn primary lg">💾 Save</button>
   </div>
-
-  <p class="muted small-note">ℹ️ The narration prompt is locked in <code><%= promptFile %></code> — the app reads that file fresh on every generate.</p>
 </form>
 
 <script>
-  document.getElementById('loadModels').addEventListener('click', async () => {
-    const status = document.getElementById('modelsStatus');
-    const select = document.getElementById('modelSelect');
-    status.textContent = '⏳ Loading models from Google…';
-    try {
-      const res = await fetch('/api/models');
-      const data = await res.json();
-      if (!data.ok) throw new Error(data.error);
-      const current = select.value;
-      select.innerHTML = '';
-      data.models.forEach((m) => {
-        const opt = document.createElement('option');
-        opt.value = m;
-        opt.textContent = m;
-        if (m === current) opt.selected = true;
-        select.appendChild(opt);
-      });
-      if (!data.models.includes(current)) {
-        const opt = document.createElement('option');
-        opt.value = current;
-        opt.textContent = current + ' (saved — not in the list!)';
-        opt.selected = true;
-        select.appendChild(opt);
+  document.querySelectorAll('.load-models').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const status = btn.parentElement.querySelector('.models-status');
+      const select = document.getElementById(btn.dataset.target);
+      status.textContent = '⏳ Loading models from Google…';
+      try {
+        const res = await fetch('/api/models' + (btn.dataset.tts === '1' ? '?tts=1' : ''));
+        const data = await res.json();
+        if (!data.ok) throw new Error(data.error);
+        const current = select.value;
+        select.innerHTML = '';
+        data.models.forEach((m) => {
+          const opt = document.createElement('option');
+          opt.value = m;
+          opt.textContent = m;
+          if (m === current) opt.selected = true;
+          select.appendChild(opt);
+        });
+        if (!data.models.includes(current)) {
+          const opt = document.createElement('option');
+          opt.value = current;
+          opt.textContent = current + ' (saved — not in the list!)';
+          opt.selected = true;
+          select.appendChild(opt);
+        }
+        status.textContent = '✅ Found ' + data.models.length + ' models — pick one and Save.';
+      } catch (err) {
+        status.textContent = '❌ ' + err.message;
       }
-      status.textContent = '✅ Found ' + data.models.length + ' models — pick one and Save.';
-    } catch (err) {
-      status.textContent = '❌ ' + err.message;
-    }
+    });
   });
 </script>
 
