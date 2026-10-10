@@ -1,0 +1,41 @@
+# ---------- Dependencies ----------
+node_modules/
+
+# ---------- Local data (NEVER commit) ----------
+# SQLite DB — isme API keys, projects, chapters, scripts sab hain
+data/
+*.db
+*.db-shm
+*.db-wal
+*.db-journal
+
+# Uploaded manhwa chapter images (copyrighted + bhaari)
+uploads/
+
+# ---------- Secrets / environment ----------
+.env
+.env.*
+!.env.example
+
+# ---------- Logs ----------
+*.log
+logs/
+npm-debug.log*
+
+# ---------- OS junk ----------
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ---------- Editors ----------
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ---------- Claude Code local settings ----------
+.claude/settings.local.json
+
+# ---------- Temp ----------
+*.tmp
+.cache/

@@ -1,0 +1,43 @@
+<%- include('partials/head', { title: 'Projects' }) %>
+
+<section class="hero">
+  <div>
+    <h1>My Projects</h1>
+    <p class="muted">Create a project → add a chapter → upload images → get your script.</p>
+  </div>
+</section>
+
+<% if (!settings.keys.length) { %>
+  <div class="alert warn">
+    ⚠️ No Google AI API key set — add your key(s) in <a href="/settings">Settings</a>, otherwise narration can't be generated.
+  </div>
+<% } %>
+
+<form method="POST" action="/projects" class="create-bar">
+  <input type="text" name="name" placeholder="New project name — e.g. 'Infinite Level Up in Murim'…" required autofocus />
+  <button type="submit" class="btn primary lg">➕ Create Project</button>
+</form>
+
+<% if (projects.length === 0) { %>
+  <div class="empty-state">
+    <div class="empty-icon">📚</div>
+    <p>No projects yet — type a name above and create your first one!</p>
+  </div>
+<% } else { %>
+  <section class="grid">
+    <% projects.forEach(function (p) { %>
+      <div class="project-card">
+        <a href="/projects/<%= p.id %>" class="card-link">
+          <h3><%= p.name %></h3>
+          <p class="muted"><%= p.chapters.length %> chapter<%= p.chapters.length === 1 ? '' : 's' %></p>
+          <span class="card-arrow">Open →</span>
+        </a>
+        <form method="POST" action="/projects/<%= p.id %>/delete" onsubmit="return confirm('Delete this entire project? All chapters and images will be removed too.')">
+          <button type="submit" class="btn ghost-danger tiny" title="Delete project">🗑</button>
+        </form>
+      </div>
+    <% }) %>
+  </section>
+<% } %>
+
+<%- include('partials/foot') %>

@@ -1,0 +1,353 @@
+<%- include('partials/head', { title: chapter.title }) %>
+
+<section class="hero">
+  <div>
+    <p class="crumbs">
+      <a href="/">Projects</a> <span class="crumb-sep">/</span>
+      <a href="/projects/<%= project.id %>"><%= project.name %></a> <span class="crumb-sep">/</span>
+      <span><%= chapter.title %></span>
+    </p>
+    <h1><%= chapter.title %></h1>
+  </div>
+  <div class="page-actions">
+    <span class="model-chip" title="Active model"><%= model %></span>
+    <button id="generateBtn" class="btn primary lg" <%= chapter.images.length ? '' : 'disabled' %>>
+      <%= chapter.narration ? '🔄 Regenerate Script' : '⚡ Generate Script' %>
+    </button>
+  </div>
+</section>
+
+<div id="statusBox" class="status-box hidden"></div>
+
+<% if (!hasKey) { %>
+  <div class="alert warn">
+    ⚠️ No Google AI API key set — add your key(s) in <a href="/settings">Settings</a> (multiple keys supported).
+  </div>
+<% } %>
+
+<div class="stats-row">
+  <% if (quota.keys.length) { %>
+  <div class="card stat-card">
+    <div class="card-head">
+      <h2>🔑 AI Quota — Remaining Today</h2>
+      <button class="btn icon small" id="refreshQuota" title="Refresh">🔄</button>
+    </div>
+    <div id="quotaList" class="quota-list">
+      <% quota.keys.forEach(function (k) { %>
+        <div class="quota-row">
+          <span class="quota-key">Key #<%= k.index + 1 %> <span class="muted"><%= k.label %></span>
+            <% if (k.active) { %><span class="badge active-badge">ACTIVE</span><% } %>
+          </span>
+          <div class="quota-bar"><div class="quota-fill <%= k.remaining === 0 ? 'quota-empty' : (k.remaining <= k.limit * 0.2 ? 'quota-low' : '') %>" style="width: <%= Math.min(100, Math.round(k.used / k.limit * 100)) %>%"></div></div>
+          <span class="quota-num <%= k.remaining === 0 ? 'status err' : '' %>"><%= k.remaining %> left <span class="muted">(<%= k.used %>/<%= k.limit %>)</span></span>
+        </div>
+      <% }) %>
+    </div>
+    <p class="muted small-note">Total left: <strong id="totalRemaining"><%= quota.totalRemaining %></strong> · <%= quota.model %> · resets midnight Pacific · exact limits in <a href="https://aistudio.google.com/rate-limit" target="_blank" rel="noopener">AI Studio</a><span id="otherModels" style="display:<%= quota.otherModelsToday ? 'inline' : 'none' %>"> · ⚠️ +<span id="otherModelsN"><%= quota.otherModelsToday %></span> req today on OTHER models (quota is per-model)</span></p>
+  </div>
+  <% } %>
+
+  <div class="card stat-card">
+    <div class="card-head">
+      <h2>📊 Token Usage</h2>
+      <button class="btn icon small" id="refreshStats" title="Refresh">🔄</button>
+    </div>
+    <% const tokenCap = quota.keys.reduce(function (s, k) { return s + k.limit; }, 0); %>
+    <div class="quota-list">
+      <div class="quota-row">
+        <span class="quota-key">Today <span class="muted" id="todayReq">(<%= tokenStats.today.requests %> req)</span></span>
+        <div class="quota-bar"><div class="quota-fill token-fill" id="tokenBar" style="width: <%= tokenCap ? Math.min(100, Math.round(tokenStats.today.requests / tokenCap * 100)) : 0 %>%"></div></div>
+        <span class="quota-num"><span id="todayTokens"><%= tokenStats.today.tokens.toLocaleString() %></span> <span class="muted">tokens</span></span>
+      </div>
+    </div>
+    <p class="muted small-note token-line">
+      Total: <strong id="allTokens"><%= tokenStats.allTime.tokens.toLocaleString() %></strong> tokens (<span id="allReq"><%= tokenStats.allTime.requests %></span> req)
+      <span id="lastGenStat" style="display:<%= tokenStats.recent.length ? 'inline' : 'none' %>">
+        · Last gen: <strong id="lastTokens"><%= tokenStats.recent.length ? tokenStats.recent[0].total_tokens.toLocaleString() : '—' %></strong> (<span id="lastModel"><%= tokenStats.recent.length ? tokenStats.recent[0].model : '' %></span>)
+      </span>
+    </p>
+    <% if (tokenStats.recent.length) { %>
+    <details class="token-history">
+      <summary class="muted small-note">Recent history ▾</summary>
+      <table class="token-table">
+        <thead><tr><th>Chapter</th><th>Prompt</th><th>Output</th><th>Total</th><th>Model</th><th>Time</th></tr></thead>
+        <tbody id="tokenHistoryBody">
+          <% tokenStats.recent.forEach(function(r) { %>
+          <tr>
+            <td title="<%= r.project_name %>"><%= (r.chapter_title || '—').length > 18 ? (r.chapter_title || '—').slice(0,16)+'…' : (r.chapter_title || '—') %></td>
+            <td><%= r.prompt_tokens.toLocaleString() %></td>
+            <td><%= r.candidate_tokens.toLocaleString() %></td>
+            <td><strong><%= r.total_tokens.toLocaleString() %></strong></td>
+            <td class="muted"><%= r.model %></td>
+            <td class="muted"><%= new Date(r.createdAt).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) %></td>
+          </tr>
+          <% }) %>
+        </tbody>
+      </table>
+    </details>
+    <% } %>
+  </div>
+</div>
+
+<div class="workspace">
+  <div class="card ws-images">
+    <div class="card-head">
+      <h2>🖼️ Images <span class="count-chip" id="imgCount"><%= chapter.images.length %></span></h2>
+      <% const remaining = 60 - chapter.images.length; %>
+      <span class="limit-badge <%= remaining <= 10 ? 'limit-low' : remaining <= 0 ? 'limit-none' : '' %>">
+        <span id="limitCount"><%= remaining %></span> / 60 remaining
+      </span>
+    </div>
+
+    <form id="uploadForm" method="POST" action="/projects/<%= project.id %>/chapters/<%= chapter.id %>/images" enctype="multipart/form-data">
+      <input type="file" id="fileInput" name="images" accept="image/*" multiple style="display:none" />
+
+      <div id="dropZone" class="drop-zone">
+        <div class="drop-icon">🖼️</div>
+        <div class="drop-text">
+          <strong>Drag &amp; drop images here</strong>
+          <span class="muted">or</span>
+          <button type="button" class="btn" id="browseBtn">Browse</button>
+        </div>
+        <div id="dropHint" class="drop-hint muted">Files upload instantly on drop · <strong>Ctrl+V</strong> paste works too · order comes from file names (1.jpg, 2.jpg, 10.jpg…)</div>
+        <div id="dropPreview" class="drop-preview hidden"></div>
+        <div id="dropStatus" class="drop-status hidden"></div>
+      </div>
+    </form>
+
+    <% if (chapter.images.length) { %>
+      <div class="thumbs" id="thumbsGrid">
+        <% chapter.images.forEach(function (img, i) { %>
+          <div class="thumb" title="<%= img.original %>">
+            <img src="/uploads/<%= project.id %>/<%= chapter.id %>/<%= img.file %>" alt="<%= img.original %>" loading="lazy" />
+            <span class="thumb-num">#<%= i + 1 %></span>
+            <form method="POST" action="/projects/<%= project.id %>/chapters/<%= chapter.id %>/images/remove" class="thumb-del">
+              <input type="hidden" name="file" value="<%= img.file %>" />
+              <button type="submit" class="thumb-del-btn" title="Remove <%= img.original %>">🗑</button>
+            </form>
+          </div>
+        <% }) %>
+      </div>
+      <form method="POST" action="/projects/<%= project.id %>/chapters/<%= chapter.id %>/images/clear" onsubmit="return confirm('Remove all images?')">
+        <button type="submit" class="btn ghost-danger small">Clear All Images</button>
+      </form>
+    <% } %>
+  </div>
+
+  <div class="card ws-narration">
+    <div class="card-head">
+      <h2>🎙️ Narration Script</h2>
+    </div>
+
+    <textarea id="narrationText" class="narration-area" placeholder="Your script will appear here…&#10;&#10;Upload images first, then hit 'Generate' above. Every section of the script carries a --- [IMAGE n] --- marker so syncing during video editing is easy."><%= chapter.narration %></textarea>
+
+    <div class="actions">
+      <button id="copyBtn" class="btn">📋 Copy</button>
+      <button id="saveBtn" class="btn">💾 Save Edits</button>
+      <a class="btn" href="/projects/<%= project.id %>/chapters/<%= chapter.id %>/narration.txt">⬇️ Download .txt</a>
+    </div>
+  </div>
+</div>
+
+<script>
+  const MAX_IMAGES = 60;
+  const CURRENT_COUNT = <%= chapter.images.length %>;
+
+  // ---- Drag & Drop / Paste / Auto-upload ----
+  const dropZone   = document.getElementById('dropZone');
+  const fileInput  = document.getElementById('fileInput');
+  const browseBtn  = document.getElementById('browseBtn');
+  const dropPreview= document.getElementById('dropPreview');
+  const dropStatus = document.getElementById('dropStatus');
+  const uploadForm = document.getElementById('uploadForm');
+
+  browseBtn.addEventListener('click', () => fileInput.click());
+
+  fileInput.addEventListener('change', (e) => {
+    // Browse se aayi files sirf tab handle karo jab humne khud set na ki hon
+    if (!fileInput.dataset.autoset) handleFiles(fileInput.files);
+    delete fileInput.dataset.autoset;
+  });
+
+  dropZone.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    dropZone.classList.add('drag-over');
+  });
+  dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+  dropZone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    dropZone.classList.remove('drag-over');
+    handleFiles(e.dataTransfer.files);
+  });
+
+  // Ctrl+V: clipboard se image paste karo (screenshot waghera)
+  document.addEventListener('paste', (e) => {
+    const items = Array.from(e.clipboardData?.items || []);
+    const files = items.filter(i => i.kind === 'file' && i.type.startsWith('image/')).map(i => i.getAsFile());
+    if (files.length) handleFiles(files);
+  });
+
+  let uploading = false;
+  function handleFiles(files) {
+    if (uploading) return;
+    const allowed = MAX_IMAGES - CURRENT_COUNT;
+    const imgs = Array.from(files).filter(f => f && f.type && f.type.startsWith('image/'));
+
+    if (!imgs.length) {
+      showDropStatus('❌ No image files found!', 'err');
+      return;
+    }
+    if (imgs.length > allowed) {
+      showDropStatus(`⚠️ Only ${allowed} more images can be added (limit: ${MAX_IMAGES}). Remove some first.`, 'warn');
+      return;
+    }
+
+    // Mini previews
+    dropPreview.innerHTML = '';
+    imgs.slice(0, 12).forEach(f => {
+      const url = URL.createObjectURL(f);
+      const img = document.createElement('img');
+      img.src = url;
+      img.className = 'drop-thumb';
+      img.title = f.name;
+      dropPreview.appendChild(img);
+    });
+    if (imgs.length > 12) {
+      const more = document.createElement('span');
+      more.className = 'drop-more muted';
+      more.textContent = `+${imgs.length - 12} more`;
+      dropPreview.appendChild(more);
+    }
+    dropPreview.classList.remove('hidden');
+
+    // Files ko input mein daal kar SEEDHA upload — koi extra click nahi
+    const dt = new DataTransfer();
+    imgs.forEach(f => dt.items.add(f));
+    fileInput.dataset.autoset = '1';
+    fileInput.files = dt.files;
+
+    uploading = true;
+    dropZone.classList.add('uploading');
+    showDropStatus(`⬆️ Uploading ${imgs.length} image${imgs.length > 1 ? 's' : ''}…`, 'gen');
+    uploadForm.submit();
+  }
+
+  function showDropStatus(msg, type) {
+    dropStatus.textContent = msg;
+    dropStatus.className = 'drop-status ' + (type || '');
+  }
+
+  // ---- Narration ----
+  const generateBtn = document.getElementById('generateBtn');
+  const copyBtn = document.getElementById('copyBtn');
+  const saveBtn = document.getElementById('saveBtn');
+  const narrationText = document.getElementById('narrationText');
+  const statusBox = document.getElementById('statusBox');
+  const baseUrl = '/projects/<%= project.id %>/chapters/<%= chapter.id %>';
+
+  function showStatus(msg, type) {
+    statusBox.textContent = msg;
+    statusBox.className = 'status-box ' + (type || '');
+  }
+
+  generateBtn?.addEventListener('click', async () => {
+    generateBtn.disabled = true;
+    generateBtn.classList.add('loading');
+    const oldLabel = generateBtn.textContent;
+    generateBtn.textContent = 'Generating…';
+    showStatus('Sending images to Gemini — this can take 30-90 seconds… (if the model is busy, the app waits and retries automatically)', 'gen');
+    try {
+      const res = await fetch(baseUrl + '/generate', { method: 'POST' });
+      const data = await res.json();
+      if (!data.ok) throw new Error(data.error || 'Generation failed');
+      narrationText.value = data.narration;
+      let msg = '✅ Script ready! Edit, copy or download it below.';
+      if (data.keyInfo && data.keyInfo.rotated) {
+        msg += ' 🔑 Note: the previous key hit its limit — auto-switched to Key #' + (data.keyInfo.usedKeyIndex + 1) + ' (' + data.keyInfo.usedKeyLabel + ') and finished the job.';
+      }
+      showStatus(msg, 'done');
+      toast('✅ Script ready!', 'done');
+      generateBtn.textContent = '🔄 Regenerate Script';
+      // Token stats + quota live update
+      if (data.tokenUsage) refreshTokenStats(data.tokenUsage);
+      if (data.quota) renderQuota(data.quota);
+    } catch (err) {
+      showStatus('❌ ' + err.message, 'err');
+      toast('❌ Generation failed — see details above', 'err');
+      generateBtn.textContent = oldLabel;
+      refreshQuotaNow();
+    } finally {
+      generateBtn.disabled = false;
+      generateBtn.classList.remove('loading');
+    }
+  });
+
+  // ---- Quota ----
+  function renderQuota(q) {
+    const list = document.getElementById('quotaList');
+    if (!list || !q || !q.keys) return;
+    list.innerHTML = q.keys.map(k => {
+      const pct = Math.min(100, Math.round(k.used / k.limit * 100));
+      const fillCls = k.remaining === 0 ? 'quota-empty' : (k.remaining <= k.limit * 0.2 ? 'quota-low' : '');
+      return '<div class="quota-row">' +
+        '<span class="quota-key">Key #' + (k.index + 1) + ' <span class="muted">' + k.label + '</span>' +
+        (k.active ? ' <span class="badge active-badge">ACTIVE</span>' : '') + '</span>' +
+        '<div class="quota-bar"><div class="quota-fill ' + fillCls + '" style="width:' + pct + '%"></div></div>' +
+        '<span class="quota-num' + (k.remaining === 0 ? ' status err' : '') + '">' + k.remaining + ' left <span class="muted">(' + k.used + '/' + k.limit + ')</span></span>' +
+        '</div>';
+    }).join('');
+    const total = document.getElementById('totalRemaining');
+    if (total) total.textContent = q.totalRemaining;
+    const other = document.getElementById('otherModels');
+    if (other) {
+      other.style.display = q.otherModelsToday ? 'inline' : 'none';
+      const n = document.getElementById('otherModelsN');
+      if (n) n.textContent = q.otherModelsToday;
+    }
+  }
+  function refreshQuotaNow() {
+    fetch('/api/quota').then(r => r.json()).then(renderQuota).catch(() => {});
+  }
+  document.getElementById('refreshQuota')?.addEventListener('click', refreshQuotaNow);
+
+  copyBtn.addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(narrationText.value);
+    } catch {
+      narrationText.select();
+      document.execCommand('copy');
+    }
+    toast('📋 Script copied!', 'done');
+  });
+
+  // Token stats refresh
+  const TOKEN_CAP = <%= quota.keys.reduce(function (s, k) { return s + k.limit; }, 0) || 0 %>;
+  function refreshTokenStats() {
+    fetch('/api/token-stats').then(r => r.json()).then(stats => {
+      document.getElementById('todayTokens').textContent = stats.today.tokens.toLocaleString();
+      document.getElementById('todayReq').textContent = '(' + stats.today.requests + ' req)';
+      document.getElementById('allTokens').textContent = stats.allTime.tokens.toLocaleString();
+      document.getElementById('allReq').textContent = stats.allTime.requests;
+      const bar = document.getElementById('tokenBar');
+      if (bar && TOKEN_CAP) bar.style.width = Math.min(100, Math.round(stats.today.requests / TOKEN_CAP * 100)) + '%';
+      if (stats.recent.length) {
+        document.getElementById('lastTokens').textContent = stats.recent[0].total_tokens.toLocaleString();
+        document.getElementById('lastModel').textContent = stats.recent[0].model;
+        document.getElementById('lastGenStat').style.display = 'inline';
+      }
+    }).catch(() => {});
+  }
+  document.getElementById('refreshStats')?.addEventListener('click', refreshTokenStats);
+
+  saveBtn.addEventListener('click', async () => {
+    const res = await fetch(baseUrl + '/narration', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ narration: narrationText.value }),
+    });
+    const data = await res.json();
+    toast(data.ok ? '💾 Saved!' : '❌ Save failed', data.ok ? 'done' : 'err');
+  });
+</script>
+
+<%- include('partials/foot') %>

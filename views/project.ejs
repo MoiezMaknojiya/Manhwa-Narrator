@@ -1,0 +1,46 @@
+<%- include('partials/head', { title: project.name }) %>
+
+<section class="hero">
+  <div>
+    <p class="crumbs"><a href="/">Projects</a> <span class="crumb-sep">/</span> <span><%= project.name %></span></p>
+    <h1><%= project.name %></h1>
+    <p class="muted"><%= project.chapters.length %> chapter<%= project.chapters.length === 1 ? '' : 's' %></p>
+  </div>
+</section>
+
+<form method="POST" action="/projects/<%= project.id %>/chapters" class="create-bar">
+  <input type="text" name="title" placeholder="New chapter — leave empty to name it 'Chapter <%= project.chapters.length + 1 %>'" />
+  <button type="submit" class="btn primary lg">➕ Add Chapter</button>
+</form>
+
+<% if (project.chapters.length === 0) { %>
+  <div class="empty-state">
+    <div class="empty-icon">🎬</div>
+    <p>No chapters yet — add your first chapter above!</p>
+  </div>
+<% } %>
+
+<div class="chapter-list">
+  <% project.chapters.forEach(function (c) { %>
+    <div class="chapter-row">
+      <a href="/projects/<%= project.id %>/chapters/<%= c.id %>" class="card-link">
+        <div class="chapter-row-main">
+          <h3><%= c.title %></h3>
+          <p class="muted">
+            🖼 <%= c.images.length %> image<%= c.images.length === 1 ? '' : 's' %>
+          </p>
+        </div>
+        <% if (c.status === 'done') { %><span class="pill done">✅ Script ready</span>
+        <% } else if (c.status === 'generating') { %><span class="pill gen">⏳ Generating…</span>
+        <% } else if (c.status === 'error') { %><span class="pill err">❌ Error</span>
+        <% } else if (c.images.length) { %><span class="pill">🟡 Pending</span>
+        <% } else { %><span class="pill idle">— Empty</span><% } %>
+      </a>
+      <form method="POST" action="/projects/<%= project.id %>/chapters/<%= c.id %>/delete" onsubmit="return confirm('Delete this chapter?')">
+        <button type="submit" class="btn ghost-danger tiny" title="Delete chapter">🗑</button>
+      </form>
+    </div>
+  <% }) %>
+</div>
+
+<%- include('partials/foot') %>
