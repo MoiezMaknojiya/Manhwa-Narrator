@@ -56,12 +56,20 @@
           <i class="ic ic-sparkles" aria-hidden="true"></i>
           Auto-detect panels
         </button>
-        <button class="btn small" id="addBtn" type="button" title="Add a 1000 px crop at the middle of the view (or double-click the image)">
+        <button class="btn small" id="addBtn" type="button" title="Add a crop at the middle of the view (or double-click the image). Fixed ratio unless Free width is on.">
           <i class="ic ic-plus" aria-hidden="true"></i>
           Add crop
         </button>
-        <label class="toggle-mini" title="Off = crop always spans the full width (recommended). On = drag the left/right edges too."><input type="checkbox" id="freeWidth" /> <span>Free width</span></label>
-        <span class="muted small-note stage-hint">Drag a box to move · drag its edge to resize · Delete removes · ← → switch image</span>
+        <label class="toggle-mini" title="Video frame ratio for new crops (resizing keeps it)"><span>Ratio</span>
+          <select id="ratioSel" aria-label="Crop ratio">
+            <option value="16:9" selected>16:9 — YouTube landscape</option>
+            <option value="4:3">4:3</option>
+            <option value="1:1">1:1 — square</option>
+            <option value="9:16">9:16 — Shorts</option>
+          </select>
+        </label>
+        <label class="toggle-mini" title="Off = fixed-ratio box that fills the video frame (recommended). On = any shape, drag every edge freely."><input type="checkbox" id="freeWidth" /> <span>Free width</span></label>
+        <span class="muted small-note stage-hint">Drag a box to move · drag an edge to resize (ratio stays locked unless Free width) · Delete removes · ← → switch image</span>
       </div>
     </div>
     <div class="stage-scroll" id="stageScroll" tabindex="0" aria-label="Image with crop boxes">
@@ -93,7 +101,7 @@
     <div class="side-list" id="sideList" role="list"></div>
     <details class="side-tips">
       <summary class="muted small-note">Why a budget?</summary>
-      <p class="muted small-note">Publishers tolerate recaps that show only part of a chapter (WEBTOON's published limit: 50% / 20 panels). Keeping each image's crops under the budget — and never showing a full page — is your strongest protection. Crops export at source resolution (no upscaling), named <code>01a.jpg, 01b.jpg…</code> in order for CapCut.</p>
+      <p class="muted small-note">Publishers tolerate recaps that show only part of a chapter (WEBTOON's published limit: 50% / 20 panels). Keeping each image's crops under the budget — and never showing a full page — is your strongest protection. Crops export at source resolution (no upscaling), named <code>01a.jpg, 01b.jpg…</code> in order for CapCut. Fixed 16:9 crops fill the video frame; turn on <strong>Free width</strong> for tall panels you want to show with a blurred background.</p>
     </details>
   </aside>
 </div>
@@ -107,7 +115,22 @@
   let budgetPct = <%= budgetPercent %>;
   const STAGE_W = 620;
   const DEFAULT_H = 1000;
-  const state = { cur: 0, sel: -1, suggestions: [], checked: new Set(IMAGES.map((im) => im.index)), free: false, dirty: false };
+  const state = { cur: 0, sel: -1, suggestions: [], checked: new Set(IMAGES.map((im) => im.index)), free: false, ratio: 16 / 9, dirty: false };
+  const RATIOS = { '16:9': 16 / 9, '4:3': 4 / 3, '1:1': 1, '9:16': 9 / 16 };
+  // Fixed-ratio box: full image width (or as wide as the ratio allows), centred on cy
+  function fixedBox(im, cy, cx) {
+    let w = im.width, h = Math.round(w / state.ratio);
+    if (h > im.height) { h = im.height; w = Math.round(h * state.ratio); }
+    const x = cx === undefined ? Math.round((im.width - w) / 2) : Math.round(cx - w / 2);
+    return { x, y: Math.round(cy - h / 2), w, h };
+  }
+  // Keep c at the fixed ratio inside the image; driver = which side the user changed ('w' or 'h')
+  function lockRatio(im, c, driver) {
+    if (state.free) return;
+    if (driver === 'w') { c.w = Math.max(16, Math.min(c.w, im.width - c.x)); c.h = Math.round(c.w / state.ratio); if (c.h > im.height - c.y) { c.h = im.height - c.y; c.w = Math.round(c.h * state.ratio); } }
+    else { c.h = Math.max(16, Math.min(c.h, im.height - c.y)); c.w = Math.round(c.h * state.ratio); if (c.w > im.width - c.x) { c.w = im.width - c.x; c.h = Math.round(c.w / state.ratio); } }
+    c.w = Math.max(16, c.w); c.h = Math.max(16, c.h);
+  }
   const $ = (id) => document.getElementById(id);
   const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   const letter = (k) => 'abcdefghijklmnopqrstuvwxyz'[k] || String(k + 1);
@@ -182,12 +205,11 @@
   }
   function renderOverlay() {
     const im = img(), s = scaleOf(im), ov = $('overlay');
-    const free = state.free;
     ov.innerHTML = state.suggestions.map((p, k) => `<button type="button" class="panel-sug" data-k="${k}" style="top:${p.y0 * s}px;height:${(p.y1 - p.y0) * s}px" title="Click to add this panel as a crop"><span>panel ${k + 1} · ${p.y1 - p.y0} px</span></button>`).join('') +
       sortCrops(im).map((c, k) => `<div class="crop-box ${k === state.sel ? 'selected' : ''}" data-k="${k}" style="left:${c.x * s}px;top:${c.y * s}px;width:${c.w * s}px;height:${c.h * s}px" tabindex="0" role="group" aria-label="Crop ${pad(im.index)}${letter(k)}">
         <span class="crop-label">${pad(im.index)}${letter(k)} · ${c.w}×${c.h}</span>
         <button type="button" class="crop-del" data-k="${k}" aria-label="Delete crop ${letter(k)}" title="Delete">×</button>
-        <i class="h h-n" data-h="n"></i><i class="h h-s" data-h="s"></i>${free ? '<i class="h h-w" data-h="w"></i><i class="h h-e" data-h="e"></i>' : ''}
+        <i class="h h-n" data-h="n"></i><i class="h h-s" data-h="s"></i><i class="h h-w" data-h="w"></i><i class="h h-e" data-h="e"></i>
       </div>`).join('');
   }
   function renderSide() {
@@ -205,13 +227,15 @@
     $('sideList').innerHTML = im.crops.length ? sortCrops(im).map((c, k) => `<div class="side-item ${k === state.sel ? 'selected' : ''}" role="listitem" data-k="${k}">
         <div class="side-thumb" style="width:${Math.round(c.w * ts)}px;height:${Math.round(c.h * ts)}px;background-image:url('${esc(im.url)}');background-size:${Math.round(im.width * ts)}px auto;background-position:-${Math.round(c.x * ts)}px -${Math.round(c.y * ts)}px"></div>
         <div class="side-info"><strong>${pad(im.index)}${letter(k)}</strong><span class="muted">${c.w} × ${c.h} px · y ${c.y}</span>
-          <span class="side-actions"><button type="button" class="btn tiny" data-act="h1000" data-k="${k}" title="Set height to 1000 px">1000</button><button type="button" class="btn tiny ghost-danger" data-act="del" data-k="${k}">Delete</button></span></div>
+          <span class="side-actions">${state.free ? `<button type="button" class="btn tiny" data-act="h1000" data-k="${k}" title="Set height to 1000 px">1000</button>` : `<button type="button" class="btn tiny" data-act="fitw" data-k="${k}" title="Full image width at the fixed ratio">Full width</button>`}<button type="button" class="btn tiny ghost-danger" data-act="del" data-k="${k}">Delete</button></span></div>
       </div>`).join('') :
       `<div class="side-empty muted small-note">No crops yet. Click <strong>Auto-detect panels</strong> and pick a panel, or <strong>Add crop</strong>, or double-click the image.</div>`;
   }
   $('sideList').addEventListener('click', (e) => {
     const b = e.target.closest('[data-act]');
-    if (b) { const k = parseInt(b.dataset.k, 10); if (b.dataset.act === 'del') return removeCrop(k); if (b.dataset.act === 'h1000') { const im = img(); const c = sortCrops(im)[k]; c.h = clamp(DEFAULT_H, 16, im.height - c.y); afterChange(k); } return; }
+    if (b) { const k = parseInt(b.dataset.k, 10); if (b.dataset.act === 'del') return removeCrop(k); if (b.dataset.act === 'h1000') { const im = img(); const c = sortCrops(im)[k]; c.h = clamp(DEFAULT_H, 16, im.height - c.y); afterChange(k); }
+      if (b.dataset.act === 'fitw') { const im = img(); const c = sortCrops(im)[k]; const cy = c.y + c.h / 2; const r = fixedBox(im, cy); Object.assign(c, { x: r.x, w: r.w, h: r.h, y: clamp(r.y, 0, im.height - r.h) }); afterChange(k); }
+      return; }
     const it = e.target.closest('.side-item'); if (it) selectCrop(parseInt(it.dataset.k, 10), true);
   });
   function afterChange(k) { const im = img(); sortCrops(im); state.sel = k; renderOverlay(); renderSide(); renderList(); markDirty(); }
@@ -232,21 +256,31 @@
   $('addBtn').addEventListener('click', () => {
     const im = img(), s = scaleOf(im), sc = $('stageScroll');
     const midY = (sc.scrollTop + sc.clientHeight / 2) / s;
-    addCrop({ y: midY - DEFAULT_H / 2, h: DEFAULT_H });
+    addCrop(state.free ? { y: midY - DEFAULT_H / 2, h: DEFAULT_H } : fixedBox(im, midY));
   });
   $('stage').addEventListener('dblclick', (e) => {
     if (e.target.closest('.crop-box') || e.target.closest('.panel-sug')) return;
     const im = img(), s = scaleOf(im), rect = $('stage').getBoundingClientRect();
-    addCrop({ y: (e.clientY - rect.top) / s - DEFAULT_H / 2, h: DEFAULT_H });
+    const cy = (e.clientY - rect.top) / s;
+    addCrop(state.free ? { y: cy - DEFAULT_H / 2, h: DEFAULT_H } : fixedBox(im, cy));
   });
   $('clearImageBtn').addEventListener('click', async () => { const im = img(); if (!im.crops.length) return; if (!(await confirmDialog(`Remove all ${im.crops.length} crops of image ${im.index}?`, { title: 'Clear crops', confirmText: 'Remove all' }))) return; im.crops = []; state.sel = -1; renderOverlay(); renderSide(); renderList(); markDirty(); });
   document.querySelectorAll('[data-split]').forEach((b) => b.addEventListener('click', async () => {
-    const n = parseInt(b.dataset.split, 10), im = img(), max = budgetOf(im), h = Math.floor(max / n), seg = im.height / n;
-    if (im.crops.length && !(await confirmDialog(`Replace the ${im.crops.length} existing crop(s) with ${n} evenly spaced crops of ${h} px?`, { title: 'Quick split', confirmText: 'Replace', danger: false }))) return;
-    im.crops = Array.from({ length: n }, (_, i) => ({ x: 0, y: Math.round(i * seg + (seg - h) / 2), w: im.width, h }));
+    const n = parseInt(b.dataset.split, 10), im = img(), max = budgetOf(im), seg = im.height / n;
+    let h = Math.floor(max / n), w = im.width;
+    if (!state.free) { h = Math.min(h, Math.round(im.width / state.ratio)); w = Math.round(h * state.ratio); } // fixed ratio, never wider than the image
+    const x = Math.round((im.width - w) / 2);
+    if (im.crops.length && !(await confirmDialog(`Replace the ${im.crops.length} existing crop(s) with ${n} evenly spaced crops of ${w}×${h} px?`, { title: 'Quick split', confirmText: 'Replace', danger: false }))) return;
+    im.crops = Array.from({ length: n }, (_, i) => ({ x, y: Math.round(i * seg + (seg - h) / 2), w, h }));
     state.sel = -1; renderOverlay(); renderSide(); renderList(); markDirty();
   }));
-  $('freeWidth').addEventListener('change', (e) => { state.free = e.target.checked; renderOverlay(); });
+  const remember = (k, v) => { try { localStorage.setItem('crops.' + k, v); } catch {} };
+  $('freeWidth').addEventListener('change', (e) => { state.free = e.target.checked; $('ratioSel').disabled = state.free; remember('free', state.free ? '1' : '0'); renderOverlay(); renderSide(); });
+  $('ratioSel').addEventListener('change', (e) => { state.ratio = RATIOS[e.target.value] || 16 / 9; remember('ratio', e.target.value); toast(`New crops: ${e.target.value}`, 'info'); });
+  try {
+    const r = localStorage.getItem('crops.ratio'); if (r && RATIOS[r]) { state.ratio = RATIOS[r]; $('ratioSel').value = r; }
+    if (localStorage.getItem('crops.free') === '1') { state.free = true; $('freeWidth').checked = true; $('ratioSel').disabled = true; }
+  } catch {}
 
   // ---------- auto-detect ----------
   $('detectBtn').addEventListener('click', async () => {
@@ -265,25 +299,30 @@
   let drag = null;
   $('overlay').addEventListener('pointerdown', (e) => {
     const sug = e.target.closest('.panel-sug');
-    if (sug) { const k = parseInt(sug.dataset.k, 10); const p = state.suggestions[k]; state.suggestions.splice(k, 1); addCrop({ x: 0, y: p.y0, w: img().width, h: p.y1 - p.y0 }); return; }
+    if (sug) { const k = parseInt(sug.dataset.k, 10); const p = state.suggestions[k]; state.suggestions.splice(k, 1); addCrop(state.free ? { x: 0, y: p.y0, w: img().width, h: p.y1 - p.y0 } : fixedBox(img(), (p.y0 + p.y1) / 2)); return; }
     const del = e.target.closest('.crop-del'); if (del) { removeCrop(parseInt(del.dataset.k, 10)); return; }
     const box = e.target.closest('.crop-box'); if (!box) return;
     const k = parseInt(box.dataset.k, 10); const im = img(); const c = sortCrops(im)[k];
     const handle = e.target.closest('.h') ? e.target.dataset.h : 'move';
     drag = { k, mode: handle, startX: e.clientX, startY: e.clientY, o: { ...c }, s: scaleOf(im), im };
     state.sel = k; renderOverlay(); renderSide();
-    box.setPointerCapture && box.setPointerCapture(e.pointerId);
-    e.preventDefault();
+    e.preventDefault(); // move/up are tracked on document, so no pointer capture needed (the box is re-rendered above)
   });
   document.addEventListener('pointermove', (e) => {
     if (!drag) return;
     const { im, s, o, mode } = drag; const dx = (e.clientX - drag.startX) / s, dy = (e.clientY - drag.startY) / s;
     const c = sortCrops(im)[drag.k]; if (!c) { drag = null; return; }
-    if (mode === 'move') { c.y = clamp(Math.round(o.y + dy), 0, im.height - o.h); if (state.free) c.x = clamp(Math.round(o.x + dx), 0, im.width - o.w); }
+    if (mode === 'move') { c.y = clamp(Math.round(o.y + dy), 0, im.height - o.h); c.x = clamp(Math.round(o.x + dx), 0, im.width - o.w); }
     else if (mode === 's') c.h = clamp(Math.round(o.h + dy), 16, im.height - o.y);
     else if (mode === 'n') { const ny = clamp(Math.round(o.y + dy), 0, o.y + o.h - 16); c.h = o.h + (o.y - ny); c.y = ny; }
     else if (mode === 'e') c.w = clamp(Math.round(o.w + dx), 16, im.width - o.x);
     else if (mode === 'w') { const nx = clamp(Math.round(o.x + dx), 0, o.x + o.w - 16); c.w = o.w + (o.x - nx); c.x = nx; }
+    if (!state.free && mode !== 'move') { // ratio lock — keep the edge opposite to the dragged one where it was
+      const right = o.x + o.w, bottom = o.y + o.h;
+      lockRatio(im, c, mode === 'e' || mode === 'w' ? 'w' : 'h');
+      if (mode === 'n') c.y = clamp(bottom - c.h, 0, im.height - c.h);
+      if (mode === 'w') c.x = clamp(right - c.w, 0, im.width - c.w);
+    }
     // Live update without full re-render
     const el = $('overlay').querySelector(`.crop-box[data-k="${drag.k}"]`);
     if (el) { el.style.left = c.x * s + 'px'; el.style.top = c.y * s + 'px'; el.style.width = c.w * s + 'px'; el.style.height = c.h * s + 'px'; el.querySelector('.crop-label').textContent = `${pad(im.index)}${letter(drag.k)} · ${c.w}×${c.h}`; }
@@ -305,7 +344,7 @@
     if (e.key === 'Delete' || e.key === 'Backspace') { removeCrop(state.sel); e.preventDefault(); }
     else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
       const d = e.key === 'ArrowUp' ? -step : step;
-      if (e.altKey) c.h = clamp(c.h + d, 16, im.height - c.y); else c.y = clamp(c.y + d, 0, im.height - c.h);
+      if (e.altKey) { c.h = clamp(c.h + d, 16, im.height - c.y); lockRatio(im, c, 'h'); } else c.y = clamp(c.y + d, 0, im.height - c.h);
       afterChange(state.sel); e.preventDefault();
     }
   });

@@ -1014,3 +1014,7 @@ a:focus-visible, button:focus-visible, summary:focus-visible, [tabindex]:focus-v
   .project-card:hover { transform: none; }
   .progress-fill.indeterminate { animation: none; width: 100%; opacity: 0.5; }
 }
+
+/* Crop ratio dropdown in the stage toolbar */
+.toggle-mini select { width: auto; font-size: 0.78rem; padding: 4px 8px; }
+.toggle-mini select:disabled { opacity: 0.45; cursor: not-allowed; }
