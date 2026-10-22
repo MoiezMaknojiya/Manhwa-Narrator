@@ -2,13 +2,13 @@
 
 <section class="hero">
   <div>
-    <h1>⚙️ Settings</h1>
-    <p class="muted">Google AI (Gemini) API keys, script model, voiceover and video options.</p>
+    <h1>Settings</h1>
+    <p class="muted">Google AI (Gemini) API keys, script model and voiceover options.</p>
   </div>
 </section>
 
 <% if (saved) { %>
-  <div class="alert done">✅ Settings saved!</div>
+  <div class="alert done" role="status"><i class="ic ic-check-circle" aria-hidden="true"></i><span>Settings saved.</span></div>
 <% } %>
 
 <form method="POST" action="/settings" class="card settings-form">
@@ -19,7 +19,7 @@
       Get keys from <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Google AI Studio</a> (each Google account gives a separate key).
       <strong>Auto-switch:</strong> when one key hits its daily limit, the app automatically switches to the next key and continues the same job.
       Keys are stored only on your computer.
-      <% if (settings.keys.length) { %><br>✅ <strong><%= settings.keys.length %> key<%= settings.keys.length > 1 ? 's' : '' %></strong> currently set.<% } %>
+      <% if (settings.keys.length) { %><br><i class="ic ic-check" aria-hidden="true"></i> <strong><%= settings.keys.length %> key<%= settings.keys.length > 1 ? 's' : '' %></strong> currently set.<% } %>
     </small>
   </label>
 
@@ -36,8 +36,8 @@
           <option value="<%= settings.model %>" selected><%= settings.model %> (custom)</option>
         <% } %>
       </select>
-      <button type="button" class="btn small load-models" data-target="modelSelect" data-tts="0" style="margin-top: 8px;">🔄 Load Models From Google</button>
-      <span class="muted models-status" style="font-size: 0.8rem;"></span>
+      <button type="button" class="btn small load-models" data-target="modelSelect" data-tts="0"><i class="ic ic-refresh" aria-hidden="true"></i>Load models from Google</button>
+      <span class="muted models-status small-note" aria-live="polite"></span>
     </label>
 
     <label>
@@ -47,11 +47,11 @@
     </label>
   </div>
 
-  <small class="muted">Both models work on free keys. ⚠️ Pro models (like gemini-3.1-pro-preview) require paid billing — they return 429 on free keys, which is why they're not listed. "Load Models" fetches the live list your key can actually access.</small>
+  <small class="muted">Both models work on free keys. Pro models (like gemini-3.1-pro-preview) require paid billing — they return 429 on free keys, which is why they're not listed. "Load Models" fetches the live list your key can actually access.</small>
 
   <!-- ---------- Script policy ---------- -->
   <div class="settings-section">
-    <h2>📝 Script policy</h2>
+    <h2><i class="ic ic-shield" aria-hidden="true"></i>Script policy</h2>
     <p class="muted small-note">The base prompt is locked in <code><%= promptFile %></code> (read fresh on every generate). The commentary layer is appended from <code>prompts/commentary-addon.md</code>.</p>
     <label class="toggle">
       <input type="checkbox" name="commentaryMode" value="on" <%= settings.commentaryMode === 'on' ? 'checked' : '' %> />
@@ -62,8 +62,8 @@
 
   <!-- ---------- Voiceover ---------- -->
   <div class="settings-section">
-    <h2>🎙️ Voiceover (Gemini TTS)</h2>
-    <p class="muted small-note">Uses the same API keys (with auto-switch). TTS has its own quota, separate from the script model.</p>
+    <h2><i class="ic ic-mic" aria-hidden="true"></i>Voiceover (Gemini TTS) — one voice file per image</h2>
+    <p class="muted small-note">Every <code>--- [IMAGE n] ---</code> section of the script gets its own audio file (<code>image-01.mp3</code>, <code>image-02.mp3</code>…), made with its own TTS request — so each image's voice is exact and can be regenerated alone. Uses the same API keys (with auto-switch); TTS has its own quota, separate from the script model.</p>
     <div class="settings-grid">
       <label>
         <span>TTS model</span>
@@ -74,95 +74,125 @@
           <% }) %>
           <% if (!ttsModels.includes(settings.ttsModel)) { %><option value="<%= settings.ttsModel %>" selected><%= settings.ttsModel %> (custom)</option><% } %>
         </select>
-        <button type="button" class="btn small load-models" data-target="ttsModelSelect" data-tts="1" style="margin-top: 8px;">🔄 Load TTS Models</button>
-        <span class="muted models-status" style="font-size: 0.8rem;"></span>
-      </label>
-      <label>
-        <span>Voice</span>
-        <select name="ttsVoice">
-          <% voices.forEach(function (v) { %>
-            <option value="<%= v.name %>" <%= settings.ttsVoice === v.name ? 'selected' : '' %>><%= v.name %> — <%= v.tone %></option>
-          <% }) %>
-        </select>
-        <small class="muted">Charon (informative) / Fenrir (excitable) / Puck (upbeat) suit recap narration. Preview voices in <a href="https://aistudio.google.com/generate-speech" target="_blank" rel="noopener">AI Studio</a>.</small>
+        <button type="button" class="btn small load-models" data-target="ttsModelSelect" data-tts="1"><i class="ic ic-refresh" aria-hidden="true"></i>Load TTS models</button>
+        <span class="muted models-status small-note" aria-live="polite"></span>
       </label>
       <label>
         <span>TTS daily limit <span class="muted">(per key, per day)</span></span>
         <input type="number" name="ttsDailyLimit" value="<%= settings.ttsDailyLimit %>" min="1" max="100000" />
-        <small class="muted">Google's free tier allows <strong>10 TTS requests/day per key</strong> (Oct 2026). With 3 keys that is ~30/day ≈ 4 chapters. The app switches keys automatically when one runs out.</small>
-      </label>
-      <label>
-        <span>Max characters per TTS request</span>
-        <input type="number" name="ttsMaxChars" value="<%= settings.ttsMaxChars %>" min="800" max="6000" step="100" />
-        <small class="muted">Fewer requests = less quota. Max 4 sections per request. A 12k-char chapter ≈ 6-7 requests at 2000. If a chunk comes back too short (TTS skipped text) it is retried, then split per section automatically.</small>
+        <small class="muted">Google's free tier allows <strong>10 TTS requests/day per key</strong> (Oct 2026). <strong>1 image = 1 request</strong>, so a 21-image chapter needs 21 — with 3 keys (~30/day) that is about one chapter a day. If the quota runs out midway, finished images stay saved and the next run only makes the rest.</small>
       </label>
     </div>
-    <label>
-      <span>Delivery style <span class="muted">(sent as style metadata — never spoken aloud)</span></span>
-      <input type="text" name="ttsStyle" value="<%= settings.ttsStyle %>" placeholder="Energetic, dramatic YouTube storyteller…" />
-    </label>
-  </div>
 
-  <!-- ---------- Video ---------- -->
-  <div class="settings-section">
-    <h2>🎞️ Video</h2>
-    <p class="muted small-note">Rendered locally with bundled ffmpeg — no music, voiceover only. Add music later in your editor from the YouTube Audio Library only.</p>
-    <div class="settings-grid three">
-      <label>
-        <span>Format</span>
-        <select name="videoPreset">
-          <option value="landscape" <%= settings.videoPreset === 'landscape' ? 'selected' : '' %>>Landscape 1920×1080 (YouTube)</option>
-          <option value="portrait" <%= settings.videoPreset === 'portrait' ? 'selected' : '' %>>Portrait 1080×1920 (Shorts/Reels)</option>
-        </select>
-      </label>
-      <label>
-        <span>Strip coverage <span class="muted">(% of each strip shown)</span></span>
-        <input type="number" name="coveragePercent" value="<%= settings.coveragePercent %>" min="20" max="100" step="5" />
-        <small class="muted">≤ 50 keeps within WEBTOON's fan-video rule ("max 20 panels or 50% of the episode, whichever is less"). 100 = full scroll (highest copyright risk).</small>
-      </label>
-      <label>
-        <span>Channel watermark text</span>
-        <input type="text" name="channelName" value="<%= settings.channelName %>" maxlength="60" placeholder="Your channel name" />
-      </label>
-    </div>
-    <div class="settings-grid three">
-      <label>
-        <span>FPS</span>
-        <input type="number" name="videoFps" value="<%= settings.videoFps %>" min="24" max="60" />
-      </label>
-      <label>
-        <span>Quality (x264 CRF) <span class="muted">18 = best/big · 28 = small</span></span>
-        <input type="number" name="videoQuality" value="<%= settings.videoQuality %>" min="16" max="30" />
-      </label>
-      <label>
-        <span>Hold at start/end of a scroll (sec)</span>
-        <input type="number" name="holdSec" value="<%= settings.holdSec %>" min="0" max="2" step="0.1" />
-      </label>
-    </div>
+    <label>
+      <span>Voice <span class="muted">(Google's voices API — new en-US character voices first, then the 30 classic Gemini voices)</span></span>
+      <select name="ttsVoice">
+        <% const groups = [['character', 'male', 'Character voices (en-US) · male'], ['character', 'female', 'Character voices (en-US) · female'], ['classic', 'male', 'Classic Gemini voices · male'], ['classic', 'female', 'Classic Gemini voices · female'], ['classic', 'neutral', 'Classic Gemini voices · neutral']]; %>
+        <% groups.forEach(function (g) { const list = voices.filter(function (v) { return v.kind === g[0] && (v.gender || '') === g[1]; }); if (!list.length) return; %>
+          <optgroup label="<%= g[2] %>">
+            <% list.forEach(function (v) { %>
+              <option value="<%= v.voice %>" <%= settings.ttsVoice === v.voice ? 'selected' : '' %>><%= v.name %><%= v.pitch ? ' · ' + v.pitch + ' pitch' : '' %><%= v.description ? ' — ' + v.description.replace(/\. Recommended.*$/, '').slice(0, 80) : '' %></option>
+            <% }) %>
+          </optgroup>
+        <% }) %>
+        <% if (!voices.some(function (v) { return v.voice === settings.ttsVoice; })) { %><option value="<%= settings.ttsVoice %>" selected><%= settings.ttsVoice %> (custom)</option><% } %>
+      </select>
+      <small class="muted"><strong>Zeno</strong> (<code>en-us-zeno</code>) = male, higher pitch, "cool, confident" reality-TV-star voice. Steadier male options: <strong>Fenrir</strong> (excitable), <strong>Puck</strong> (upbeat), <strong>Charon</strong> (low, steady). Preview in <a href="https://aistudio.google.com/generate-speech" target="_blank" rel="noopener">AI Studio</a>. List saved in <code>lib/voices.json</code>.</small>
+    </label>
+
+    <label>
+      <span>Delivery style <span class="muted">(sent as style metadata — never spoken aloud; same as AI Studio's style box)</span></span>
+      <textarea name="ttsStyle" rows="3" placeholder="Energetic male Hindi YouTube manhwa recap narrator…"><%= settings.ttsStyle %></textarea>
+    </label>
+
     <div class="settings-grid">
       <label>
-        <span>Cut from TOP of the first image (px)</span>
-        <input type="number" name="trimFirstTop" value="<%= settings.trimFirstTop %>" min="0" max="5000" />
-        <small class="muted">Removes site banners at the start of a chapter. Cropping a watermark does not make an aggregator image legal — prefer official-source images.</small>
+        <span>Temperature <span class="muted">(0-2)</span></span>
+        <input type="number" name="ttsTemperature" value="<%= settings.ttsTemperature %>" min="0" max="2" step="0.05" />
+        <small class="muted">Higher = more expressive/varied delivery, lower = flatter and more consistent between images. AI Studio default is 1.0.</small>
       </label>
       <label>
-        <span>Cut from BOTTOM of the last image (px)</span>
-        <input type="number" name="trimLastBottom" value="<%= settings.trimLastBottom %>" min="0" max="5000" />
+        <span>Language <span class="muted">(BCP-47, blank = auto-detect)</span></span>
+        <input type="text" name="ttsLanguage" value="<%= settings.ttsLanguage %>" list="ttsLanguages" placeholder="en-US" />
+        <datalist id="ttsLanguages">
+          <option value="en-US">English (US)</option>
+          <option value="en-IN">English (India)</option>
+          <option value="hi-IN">Hindi (India)</option>
+          <option value="ur-PK">Urdu (Pakistan)</option>
+          <option value="en-GB">English (UK)</option>
+        </datalist>
+        <small class="muted">AI Studio's "Language" dropdown. Zeno is an <code>en-US</code> voice; for Roman Urdu text keep <code>en-US</code> and let the style text set the Hindi/Urdu accent.</small>
       </label>
     </div>
+    <small class="muted">Changing the voice, style, temperature or language makes every image's voice "not generated" again (old files are kept until the next full run finishes).</small>
   </div>
 
   <div class="actions">
-    <button type="submit" class="btn primary lg">💾 Save</button>
+    <button type="submit" class="btn primary lg"><i class="ic ic-save" aria-hidden="true"></i>Save settings</button>
   </div>
 </form>
+
+<div class="save-bar hidden" id="saveBar" role="status"><span><i class="ic ic-edit" aria-hidden="true"></i>Unsaved changes</span><button type="button" class="btn primary small" id="saveBarBtn"><i class="ic ic-save" aria-hidden="true"></i>Save settings</button></div>
+
+<!-- ---------- Image Voices card switch (secret number) ---------- -->
+<% const voicesOn = settings.showVoicesCard === 'on'; %>
+<section class="card settings-form voices-switch-card" id="voices-card">
+  <div class="card-head">
+    <h2><i class="ic ic-eye" aria-hidden="true"></i>Image Voices card</h2>
+    <label class="switch" title="Turn the Image Voices card on/off (asks for your secret number)">
+      <input type="checkbox" id="voicesSwitch" <%= voicesOn ? 'checked' : '' %> />
+      <span class="slider"></span>
+      <span class="switch-label"><%= voicesOn ? 'ON — shown on chapter pages' : 'OFF — hidden' %></span>
+    </label>
+  </div>
+  <p class="muted small-note">Shows or hides the "Image Voices" card (voice generation, clips, ZIP downloads, upload checklist) on every chapter page. Every change asks for your secret number.</p>
+  <% if (voicesErr) { %><div class="alert warn" role="alert"><i class="ic ic-x-circle" aria-hidden="true"></i><span><%= voicesErr %></span></div><% } %>
+  <% if (voicesMsg) { %><div class="alert done" role="status"><i class="ic ic-check-circle" aria-hidden="true"></i><span><%= voicesMsg %></span></div><% } %>
+
+  <form method="POST" action="/settings/voices-card" class="pin-form <%= voicesErr ? '' : 'hidden' %>" id="pinForm" autocomplete="off">
+    <input type="hidden" name="action" value="toggle" />
+    <input type="hidden" name="enabled" value="<%= voicesOn ? 'off' : 'on' %>" />
+    <% if (settings.hasVoicesPin) { %>
+      <label><span>Secret number to turn the card <strong><%= voicesOn ? 'OFF' : 'ON' %></strong></span><input type="password" name="pin" id="pinInput" inputmode="numeric" pattern="\d{4,8}" autocomplete="off" required placeholder="••••" /></label>
+    <% } else { %>
+      <label><span>Create your secret number <span class="muted">(4-8 digits — first time only)</span></span><input type="password" name="newPin" id="pinInput" inputmode="numeric" pattern="\d{4,8}" autocomplete="new-password" required placeholder="••••" /></label>
+      <label><span>Repeat it</span><input type="password" name="newPin2" inputmode="numeric" pattern="\d{4,8}" autocomplete="new-password" required placeholder="••••" /></label>
+    <% } %>
+    <div class="actions">
+      <button type="submit" class="btn primary"><% if (voicesOn) { %><i class="ic ic-eye-off" aria-hidden="true"></i>Turn off (hide card)<% } else { %><i class="ic ic-eye" aria-hidden="true"></i>Turn on (show card)<% } %></button>
+      <button type="button" class="btn" id="pinCancel">Cancel</button>
+    </div>
+  </form>
+
+  <% if (settings.hasVoicesPin) { %>
+  <details class="pin-change">
+    <summary class="muted small-note">Change secret number</summary>
+    <form method="POST" action="/settings/voices-card" class="pin-form" autocomplete="off">
+      <input type="hidden" name="action" value="changepin" />
+      <label><span>Current</span><input type="password" name="pin" inputmode="numeric" pattern="\d{4,8}" required /></label>
+      <label><span>New <span class="muted">(4-8 digits)</span></span><input type="password" name="newPin" inputmode="numeric" pattern="\d{4,8}" required /></label>
+      <label><span>Repeat new</span><input type="password" name="newPin2" inputmode="numeric" pattern="\d{4,8}" required /></label>
+      <button type="submit" class="btn small">Change</button>
+    </form>
+  </details>
+  <% } %>
+</section>
+<script>
+  // Switch dabao → PIN form khule; asal badlaav server par PIN check ke baad hi hota hai
+  (function () {
+    const sw = document.getElementById('voicesSwitch');
+    const form = document.getElementById('pinForm');
+    sw.addEventListener('click', (e) => { e.preventDefault(); form.classList.remove('hidden'); document.getElementById('pinInput').focus(); });
+    document.getElementById('pinCancel').addEventListener('click', () => form.classList.add('hidden'));
+  })();
+</script>
 
 <script>
   document.querySelectorAll('.load-models').forEach((btn) => {
     btn.addEventListener('click', async () => {
       const status = btn.parentElement.querySelector('.models-status');
       const select = document.getElementById(btn.dataset.target);
-      status.textContent = '⏳ Loading models from Google…';
+      status.textContent = 'Loading models from Google…'; status.className = 'muted models-status small-note';
       try {
         const res = await fetch('/api/models' + (btn.dataset.tts === '1' ? '?tts=1' : ''));
         const data = await res.json();
@@ -183,12 +213,23 @@
           opt.selected = true;
           select.appendChild(opt);
         }
-        status.textContent = '✅ Found ' + data.models.length + ' models — pick one and Save.';
+        status.textContent = 'Found ' + data.models.length + ' models — pick one and save.'; status.className = 'models-status small-note status ok';
       } catch (err) {
-        status.textContent = '❌ ' + err.message;
+        status.textContent = 'Error: ' + err.message; status.className = 'models-status small-note status err';
       }
     });
   });
+</script>
+
+<script>
+  // Unsaved-changes bar + Ctrl+S — sirf main settings form ke liye
+  (function () {
+    const form = document.querySelector('form.settings-form'), bar = document.getElementById('saveBar');
+    if (!form || !bar) return;
+    form.addEventListener('input', () => bar.classList.remove('hidden'));
+    document.getElementById('saveBarBtn').addEventListener('click', () => form.requestSubmit());
+    document.addEventListener('keydown', (e) => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); form.requestSubmit(); } });
+  })();
 </script>
 
 <%- include('partials/foot') %>

@@ -11,17 +11,23 @@
   </div>
   <div class="page-actions">
     <span class="model-chip" title="Active model"><%= model %></span>
-    <button id="generateBtn" class="btn primary lg" <%= chapter.images.length ? '' : 'disabled' %>>
-      <%= chapter.narration ? '🔄 Regenerate Script' : '⚡ Generate Script' %>
+    <button id="generateBtn" class="btn primary lg" type="button" <%- chapter.images.length ? '' : 'disabled title="Upload images first"' %>>
+      <% if (chapter.narration) { %><i class="ic ic-refresh" aria-hidden="true"></i>Regenerate script<% } else { %><i class="ic ic-zap" aria-hidden="true"></i>Generate script<% } %>
     </button>
   </div>
 </section>
 
-<div id="statusBox" class="status-box hidden"></div>
+<div id="statusBox" class="status-box hidden" role="status"></div>
+
+<details class="notes-box" <%= chapter.notes ? 'open' : '' %>>
+  <summary><i class="ic ic-note" aria-hidden="true"></i>Notes for this chapter only <span class="muted small-note">— one-off instructions for Gemini (e.g. "the hooded man is unnamed until image 14 — do not name him before that")</span></summary>
+  <textarea id="chapterNotes" rows="2" maxlength="1500" placeholder="Applies only when generating this chapter — not a permanent rule."><%= chapter.notes %></textarea>
+  <div class="actions"><button id="saveNotesBtn" class="btn small" type="button"><i class="ic ic-save" aria-hidden="true"></i>Save notes</button><span class="muted small-note" id="notesStatus"></span></div>
+</details>
 
 <% if (!hasKey) { %>
   <div class="alert warn">
-    ⚠️ No Google AI API key set — add your key(s) in <a href="/settings">Settings</a> (multiple keys supported).
+    <i class="ic ic-alert" aria-hidden="true"></i><span>No Google AI API key set — add your key(s) in <a href="/settings">Settings</a> (multiple keys supported).</span>
   </div>
 <% } %>
 
@@ -29,8 +35,8 @@
   <% if (quota.keys.length) { %>
   <div class="card stat-card">
     <div class="card-head">
-      <h2>🔑 AI Quota — Remaining Today</h2>
-      <button class="btn icon small" id="refreshQuota" title="Refresh">🔄</button>
+      <h2><i class="ic ic-key" aria-hidden="true"></i>AI quota — remaining today</h2>
+      <button class="btn icon-only" id="refreshQuota" type="button" title="Refresh quota" aria-label="Refresh quota"><i class="ic ic-refresh" aria-hidden="true"></i></button>
     </div>
     <div id="quotaList" class="quota-list">
       <% quota.keys.forEach(function (k) { %>
@@ -43,14 +49,14 @@
         </div>
       <% }) %>
     </div>
-    <p class="muted small-note">Total left: <strong id="totalRemaining"><%= quota.totalRemaining %></strong> · <%= quota.model %> · resets midnight Pacific · exact limits in <a href="https://aistudio.google.com/rate-limit" target="_blank" rel="noopener">AI Studio</a><span id="otherModels" style="display:<%= quota.otherModelsToday ? 'inline' : 'none' %>"> · ⚠️ +<span id="otherModelsN"><%= quota.otherModelsToday %></span> req today on OTHER models (quota is per-model)</span></p>
+    <p class="muted small-note">Total left: <strong id="totalRemaining"><%= quota.totalRemaining %></strong> · <%= quota.model %> · resets midnight Pacific · exact limits in <a href="https://aistudio.google.com/rate-limit" target="_blank" rel="noopener">AI Studio</a><span id="otherModels" style="display:<%= quota.otherModelsToday ? 'inline' : 'none' %>"> · <i class="ic ic-alert" aria-hidden="true"></i> +<span id="otherModelsN"><%= quota.otherModelsToday %></span> req today on OTHER models (quota is per-model)</span></p>
   </div>
   <% } %>
 
   <div class="card stat-card">
     <div class="card-head">
-      <h2>📊 Token Usage</h2>
-      <button class="btn icon small" id="refreshStats" title="Refresh">🔄</button>
+      <h2><i class="ic ic-chart" aria-hidden="true"></i>Token usage</h2>
+      <button class="btn icon-only" id="refreshStats" type="button" title="Refresh token stats" aria-label="Refresh token stats"><i class="ic ic-refresh" aria-hidden="true"></i></button>
     </div>
     <% const tokenCap = quota.keys.reduce(function (s, k) { return s + k.limit; }, 0); %>
     <div class="quota-list">
@@ -68,7 +74,7 @@
     </p>
     <% if (tokenStats.recent.length) { %>
     <details class="token-history">
-      <summary class="muted small-note">Recent history ▾</summary>
+      <summary class="muted small-note">Recent history</summary>
       <table class="token-table">
         <thead><tr><th>Chapter</th><th>Prompt</th><th>Output</th><th>Total</th><th>Model</th><th>Time</th></tr></thead>
         <tbody id="tokenHistoryBody">
@@ -92,18 +98,24 @@
 <div class="workspace">
   <div class="card ws-images">
     <div class="card-head">
-      <h2>🖼️ Images <span class="count-chip" id="imgCount"><%= chapter.images.length %></span></h2>
+      <h2><i class="ic ic-image" aria-hidden="true"></i>Images <span class="count-chip" id="imgCount"><%= chapter.images.length %></span></h2>
       <% const remaining = 60 - chapter.images.length; %>
       <span class="limit-badge <%= remaining <= 10 ? 'limit-low' : remaining <= 0 ? 'limit-none' : '' %>">
         <span id="limitCount"><%= remaining %></span> / 60 remaining
       </span>
+      <% if (chapter.images.length) { %>
+        <a class="btn small" href="/projects/<%= project.id %>/chapters/<%= chapter.id %>/crops" title="Cut the panels you will show in the video (copyright budget)">
+          <i class="ic ic-crop" aria-hidden="true"></i>
+          Crop panels<% const cropsSaved = chapter.flags && chapter.flags.crops && chapter.flags.crops.byFile ? Object.values(chapter.flags.crops.byFile).reduce(function (a, l) { return a + (l ? l.length : 0); }, 0) : 0; %><%= cropsSaved ? ' (' + cropsSaved + ')' : '' %>
+        </a>
+      <% } %>
     </div>
 
     <form id="uploadForm" method="POST" action="/projects/<%= project.id %>/chapters/<%= chapter.id %>/images" enctype="multipart/form-data">
       <input type="file" id="fileInput" name="images" accept="image/*" multiple style="display:none" />
 
       <div id="dropZone" class="drop-zone">
-        <div class="drop-icon">🖼️</div>
+        <i class="ic ic-upload drop-icon" aria-hidden="true"></i>
         <div class="drop-text">
           <strong>Drag &amp; drop images here</strong>
           <span class="muted">or</span>
@@ -121,70 +133,61 @@
           <div class="thumb" title="<%= img.original %>">
             <img src="/uploads/<%= project.id %>/<%= chapter.id %>/<%= img.file %>" alt="<%= img.original %>" loading="lazy" />
             <span class="thumb-num">#<%= i + 1 %></span>
-            <form method="POST" action="/projects/<%= project.id %>/chapters/<%= chapter.id %>/images/remove" class="thumb-del">
+            <form method="POST" action="/projects/<%= project.id %>/chapters/<%= chapter.id %>/images/remove" class="thumb-del" data-confirm="Remove image #<%= i + 1 %>? The images after it move up one number, so the script's [IMAGE n] markers may no longer line up." data-confirm-title="Remove image" data-confirm-text="Remove">
               <input type="hidden" name="file" value="<%= img.file %>" />
-              <button type="submit" class="thumb-del-btn" title="Remove <%= img.original %>">🗑</button>
+              <button type="submit" class="thumb-del-btn" title="Remove this image" aria-label="Remove image #<%= i + 1 %>"><i class="ic ic-trash" aria-hidden="true"></i></button>
             </form>
           </div>
         <% }) %>
       </div>
-      <form method="POST" action="/projects/<%= project.id %>/chapters/<%= chapter.id %>/images/clear" onsubmit="return confirm('Remove all images?')">
-        <button type="submit" class="btn ghost-danger small">Clear All Images</button>
+      <form method="POST" action="/projects/<%= project.id %>/chapters/<%= chapter.id %>/images/clear" data-confirm="Remove all <%= chapter.images.length %> images from this chapter? The script stays, but its [IMAGE n] sections will point at nothing until you upload again." data-confirm-title="Clear all images" data-confirm-text="Remove all images">
+        <button type="submit" class="btn ghost-danger small"><i class="ic ic-trash" aria-hidden="true"></i>Clear all images</button>
       </form>
     <% } %>
   </div>
 
   <div class="card ws-narration">
     <div class="card-head">
-      <h2>🎙️ Narration Script</h2>
+      <h2><i class="ic ic-file-text" aria-hidden="true"></i>Narration script</h2>
     </div>
 
-    <textarea id="narrationText" class="narration-area" placeholder="Your script will appear here…&#10;&#10;Upload images first, then hit 'Generate' above. Every section of the script carries a --- [IMAGE n] --- marker so syncing during video editing is easy."><%= chapter.narration %></textarea>
+    <textarea id="narrationText" class="narration-area" placeholder="Your script will appear here…&#10;&#10;Upload images first, then hit 'Generate' above. Every section of the script carries a --- [IMAGE n] --- marker — each section becomes its own voice file (image-01.mp3, image-02.mp3…)."><%= chapter.narration %></textarea>
 
     <div class="actions">
-      <button id="copyBtn" class="btn">📋 Copy</button>
-      <button id="saveBtn" class="btn">💾 Save Edits</button>
-      <a class="btn" href="/projects/<%= project.id %>/chapters/<%= chapter.id %>/narration.txt">⬇️ Download .txt</a>
+      <button id="copyBtn" class="btn" type="button"><i class="ic ic-copy" aria-hidden="true"></i>Copy</button>
+      <button id="saveBtn" class="btn" type="button" title="Ctrl+S"><i class="ic ic-save" aria-hidden="true"></i>Save edits</button>
+      <a class="btn" href="/projects/<%= project.id %>/chapters/<%= chapter.id %>/narration.txt"><i class="ic ic-download" aria-hidden="true"></i>Download .txt</a>
+      <button id="restoreBtn" class="btn <%= (chapter.prevNarration || '').trim() ? '' : 'hidden' %>" title="Bring back the script that was replaced by the last Regenerate" type="button"><i class="ic ic-undo" aria-hidden="true"></i>Restore previous script</button>
+      <span class="dirty-note small-note hidden" id="dirtyNote"><i class="ic ic-edit" aria-hidden="true"></i>Unsaved edits</span>
     </div>
   </div>
 </div>
 
-<!-- ---------- Voiceover & Video ---------- -->
+<!-- Script/roster warnings — hamesha dikhte hain, chahe Image Voices card chhupi ho -->
+<div id="flagsBox" class="alert warn hidden mt-16" role="status"></div>
+
+<% if (showVoices) { %>
+<!-- ---------- Image voices ---------- -->
 <section class="card media-card" id="media">
   <div class="card-head">
-    <h2>🎬 Voiceover &amp; Video</h2>
+    <h2><i class="ic ic-mic" aria-hidden="true"></i>Image voices <span class="muted small-note">— one audio file per image</span></h2>
     <span class="muted small-note" id="mediaSummary"></span>
   </div>
-  <div id="flagsBox" class="alert warn hidden"></div>
 
-  <div class="media-grid">
-    <div class="media-col">
-      <h3>🎙️ Voiceover <span class="model-chip" id="ttsChip"></span></h3>
-      <p class="media-note muted" id="ttsInfo"></p>
-      <div class="actions">
-        <button id="ttsBtn" class="btn primary">🎙️ Generate Voiceover</button>
-        <a id="mp3Link" class="btn hidden" href="/projects/<%= project.id %>/chapters/<%= chapter.id %>/download/mp3">⬇️ MP3</a>
-      </div>
-      <div id="ttsProgress" class="progress hidden"><div class="progress-bar"><div class="progress-fill"></div></div><span class="progress-msg muted"></span></div>
-      <audio id="ttsAudio" controls class="hidden" preload="none"></audio>
+  <div class="voice-bar">
+    <div class="voice-settings" id="voiceSettings"></div>
+    <div class="actions">
+      <button id="ttsBtn" class="btn primary" type="button"><i class="ic ic-mic" aria-hidden="true"></i>Generate voices</button>
+      <a id="zipMp3" class="btn hidden" href="/projects/<%= project.id %>/chapters/<%= chapter.id %>/download/voices.zip"><i class="ic ic-download" aria-hidden="true"></i>All voices (ZIP)</a>
     </div>
-
-    <div class="media-col">
-      <h3>🎞️ Video <span class="model-chip" id="videoChip"></span></h3>
-      <p class="media-note muted" id="videoInfo"></p>
-      <div class="actions">
-        <button id="videoBtn" class="btn primary">🎞️ Render Video</button>
-        <a id="mp4Link" class="btn hidden" href="/projects/<%= project.id %>/chapters/<%= chapter.id %>/download/mp4">⬇️ MP4</a>
-        <a id="srtLink" class="btn hidden" href="/projects/<%= project.id %>/chapters/<%= chapter.id %>/download/srt">⬇️ Captions (.srt)</a>
-        <a id="descLink" class="btn hidden" href="/projects/<%= project.id %>/chapters/<%= chapter.id %>/download/description">⬇️ Title + Description</a>
-      </div>
-      <div id="videoProgress" class="progress hidden"><div class="progress-bar"><div class="progress-fill"></div></div><span class="progress-msg muted"></span></div>
-      <video id="videoPlayer" controls class="hidden" preload="none"></video>
-    </div>
+    <p class="media-note muted" id="ttsInfo"></p>
+    <div id="ttsProgress" class="progress hidden"><div class="progress-bar"><div class="progress-fill"></div></div><span class="progress-msg muted"></span></div>
   </div>
 
-  <details class="publish-box" open>
-    <summary>✅ Pre-upload checklist — copyright &amp; YouTube policy (Oct 2026)</summary>
+  <div class="clip-list" id="clipList"></div>
+
+  <details class="publish-box">
+    <summary><i class="ic ic-shield" aria-hidden="true"></i>Pre-upload checklist — copyright &amp; YouTube policy (Oct 2026)</summary>
     <ul class="checklist" id="checklist"></ul>
     <div class="listing">
       <label>Suggested title</label>
@@ -192,13 +195,16 @@
       <label>Suggested description (credit block included)</label>
       <textarea id="ytDesc" readonly></textarea>
       <div class="actions" style="margin-top:4px">
-        <button class="btn small" id="copyTitle">📋 Copy title</button>
-        <button class="btn small" id="copyDesc">📋 Copy description</button>
+        <button class="btn small" id="copyTitle" type="button"><i class="ic ic-copy" aria-hidden="true"></i>Copy title</button>
+        <button class="btn small" id="copyDesc" type="button"><i class="ic ic-copy" aria-hidden="true"></i>Copy description</button>
       </div>
     </div>
     <p class="risk-note">This checklist lowers risk, it does not remove it. Every panel is copyrighted; publishers enforce by manual DMCA strikes (not Content ID claims), and 3 strikes in 90 days ends a channel. WEBTOON is the only platform with published fan-video rules (≤20 panels or 50% of a free, official episode, with credit). Full research notes: <code>POLICY.md</code>.</p>
   </details>
 </section>
+<% } else { %>
+<p class="muted small-note mt-14"><i class="ic ic-eye-off" aria-hidden="true"></i> Image Voices card is hidden — turn it on in <a href="/settings#voices-card">Settings</a> (secret number required).</p>
+<% } %>
 
 <script>
   const MAX_IMAGES = 60;
@@ -245,11 +251,11 @@
     const imgs = Array.from(files).filter(f => f && f.type && f.type.startsWith('image/'));
 
     if (!imgs.length) {
-      showDropStatus('❌ No image files found!', 'err');
+      showDropStatus('No image files found.', 'err');
       return;
     }
     if (imgs.length > allowed) {
-      showDropStatus(`⚠️ Only ${allowed} more images can be added (limit: ${MAX_IMAGES}). Remove some first.`, 'warn');
+      showDropStatus(`Only ${allowed} more image${allowed === 1 ? '' : 's'} can be added (limit ${MAX_IMAGES}) — remove some first.`, 'warn');
       return;
     }
 
@@ -279,7 +285,7 @@
 
     uploading = true;
     dropZone.classList.add('uploading');
-    showDropStatus(`⬆️ Uploading ${imgs.length} image${imgs.length > 1 ? 's' : ''}…`, 'gen');
+    showDropStatus(`Uploading ${imgs.length} image${imgs.length > 1 ? 's' : ''}…`, 'gen');
     uploadForm.submit();
   }
 
@@ -297,14 +303,38 @@
   const baseUrl = '/projects/<%= project.id %>/chapters/<%= chapter.id %>';
 
   function showStatus(msg, type) {
-    statusBox.textContent = msg;
+    const icon = { done: 'check-circle', err: 'x-circle', warn: 'alert', gen: 'info' }[type] || 'info';
+    statusBox.innerHTML = '<i class="ic ic-' + icon + '" aria-hidden="true"></i><span></span>';
+    statusBox.lastChild.textContent = msg;
     statusBox.className = 'status-box ' + (type || '');
   }
 
+  // Unsaved edits track — Regenerate/leave par warning
+  let dirty = false;
+  narrationText.addEventListener('input', () => { dirty = true; document.getElementById('dirtyNote').classList.remove('hidden'); });
+  const markClean = () => { dirty = false; document.getElementById('dirtyNote').classList.add('hidden'); };
+  window.addEventListener('beforeunload', (e) => { if (dirty) { e.preventDefault(); e.returnValue = ''; } });
+
+  // Notes (sirf is chapter ke liye)
+  document.getElementById('saveNotesBtn').addEventListener('click', async () => {
+    const st = document.getElementById('notesStatus');
+    const btn = document.getElementById('saveNotesBtn');
+    btn.disabled = true;
+    try {
+      const res = await fetch(baseUrl + '/notes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ notes: document.getElementById('chapterNotes').value }) });
+      const ok = (await res.json()).ok;
+      st.textContent = ok ? 'Saved — used on the next generate' : 'Could not save';
+      st.className = 'small-note status ' + (ok ? 'ok' : 'err');
+      if (ok) flashBtn(btn, 'Saved');
+    } catch (err) { st.textContent = 'Could not save: ' + err.message; st.className = 'small-note status err'; }
+    finally { btn.disabled = false; }
+  });
+
   generateBtn?.addEventListener('click', async () => {
+    if (narrationText.value.trim() && !(await confirmDialog('Replace the current script?' + (dirty ? ' You have unsaved edits that will be lost.' : ' The current one is kept as "previous script", so you can restore it.'), { title: 'Regenerate script', confirmText: 'Regenerate', danger: !!dirty }))) return;
     generateBtn.disabled = true;
     generateBtn.classList.add('loading');
-    const oldLabel = generateBtn.textContent;
+    const oldLabel = generateBtn.innerHTML;
     generateBtn.textContent = 'Generating…';
     showStatus('Sending images to Gemini — this can take 30-90 seconds… (if the model is busy, the app waits and retries automatically)', 'gen');
     try {
@@ -312,21 +342,31 @@
       const data = await res.json();
       if (!data.ok) throw new Error(data.error || 'Generation failed');
       narrationText.value = data.narration;
-      let msg = '✅ Script ready! Edit, copy or download it below.';
+      markClean();
+      document.getElementById('restoreBtn').classList.remove('hidden');
+      let msg = 'Script ready. Edit, copy or download it below.';
       if (data.keyInfo && data.keyInfo.rotated) {
-        msg += ' 🔑 Note: the previous key hit its limit — auto-switched to Key #' + (data.keyInfo.usedKeyIndex + 1) + ' (' + data.keyInfo.usedKeyLabel + ') and finished the job.';
+        msg += ' Note: the previous key hit its limit — auto-switched to Key #' + (data.keyInfo.usedKeyIndex + 1) + ' (' + data.keyInfo.usedKeyLabel + ') and finished the job.';
       }
-      showStatus(msg, 'done');
-      toast('✅ Script ready!', 'done');
-      generateBtn.textContent = '🔄 Regenerate Script';
+      const ch = data.characters || {};
+      const bits = [];
+      if (ch.added) bits.push(ch.added + ' new character' + (ch.added === 1 ? '' : 's'));
+      if (ch.updated) bits.push(ch.updated + ' updated');
+      if (ch.pending && ch.pending.length) bits.push(ch.pending.length + ' unnamed/unsure (not added)');
+      if (ch.ambiguous && ch.ambiguous.length) bits.push(ch.ambiguous.length + ' ambiguous name' + (ch.ambiguous.length === 1 ? '' : 's'));
+      if (bits.length) msg += ' Roster: ' + bits.join(', ') + '.';
+      if (data.warnings && data.warnings.length) msg += ' Warnings: ' + data.warnings.join(' ');
+      showStatus(msg, data.warnings && data.warnings.length ? 'warn' : 'done');
+      toast('Script ready', 'done');
+      generateBtn.innerHTML = '<i class="ic ic-refresh" aria-hidden="true"></i>Regenerate script';
       // Token stats + quota live update
       if (data.tokenUsage) refreshTokenStats(data.tokenUsage);
       if (data.quota) renderQuota(data.quota);
       if (data.media) renderMedia(data.media);
     } catch (err) {
-      showStatus('❌ ' + err.message, 'err');
-      toast('❌ Generation failed — see details above', 'err');
-      generateBtn.textContent = oldLabel;
+      showStatus('Generation failed: ' + err.message, 'err');
+      toast('Generation failed — see details above', 'err');
+      generateBtn.innerHTML = oldLabel;
       refreshQuotaNow();
     } finally {
       generateBtn.disabled = false;
@@ -369,7 +409,8 @@
       narrationText.select();
       document.execCommand('copy');
     }
-    toast('📋 Script copied!', 'done');
+    toast('Script copied', 'done');
+    flashBtn(copyBtn, 'Copied');
   });
 
   // Token stats refresh
@@ -391,21 +432,48 @@
   }
   document.getElementById('refreshStats')?.addEventListener('click', refreshTokenStats);
 
-  saveBtn.addEventListener('click', async () => {
-    const res = await fetch(baseUrl + '/narration', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ narration: narrationText.value }),
-    });
+  async function saveNarration() {
+    if (saveBtn.classList.contains('loading')) return;
+    saveBtn.classList.add('loading');
+    try {
+      const res = await fetch(baseUrl + '/narration', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ narration: narrationText.value }),
+      });
+      const data = await res.json();
+      if (!data.ok) throw new Error(data.error || 'Save failed');
+      markClean();
+      saveBtn.classList.remove('loading');
+      flashBtn(saveBtn, 'Saved');
+      toast('Script saved', 'done');
+      if (data.media) renderMedia(data.media);
+    } catch (err) {
+      toast('Save failed: ' + err.message, 'err');
+    } finally { saveBtn.classList.remove('loading'); }
+  }
+  saveBtn.addEventListener('click', saveNarration);
+  // Ctrl+S = save edits (sirf jab kuch badla ho)
+  document.addEventListener('keydown', (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); if (dirty) saveNarration(); }
+  });
+
+  document.getElementById('restoreBtn').addEventListener('click', async () => {
+    if (!(await confirmDialog('Swap back to the previous script? The current one becomes "previous", so you can swap again.', { title: 'Restore previous script', confirmText: 'Restore', danger: false }))) return;
+    const res = await fetch(baseUrl + '/narration/restore', { method: 'POST' });
     const data = await res.json();
-    toast(data.ok ? '💾 Saved!' : '❌ Save failed', data.ok ? 'done' : 'err');
+    if (!data.ok) return toast(data.error || 'Could not restore', 'err');
+    narrationText.value = data.narration;
+    markClean();
+    toast('Previous script restored', 'done');
     if (data.media) renderMedia(data.media);
   });
 
-  // ================= Voiceover & Video =================
+  // ================= Image voices =================
+  const SHOW_VOICES = <%= showVoices ? 'true' : 'false' %>;
   let media = <%- JSON.stringify(media).replace(/</g, '\\u003c') %>;
   let pollTimer = null;
-  let lastJobs = { voiceover: null, video: null };
+  let lastJob = null;
   const $ = (id) => document.getElementById(id);
   const fmtSec = (s) => { s = Math.round(s || 0); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); };
   const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -421,113 +489,162 @@
   }
 
   function ck(state, title, detail) {
-    const icon = { ok: '✅', warn: '⚠️', bad: '⛔', info: 'ℹ️' }[state] || 'ℹ️';
-    return `<li class="${state}"><span class="ck">${icon}</span><span><strong>${esc(title)}</strong>${detail ? ' — ' + esc(detail) : ''}</span></li>`;
+    const icon = { ok: 'check-circle', warn: 'alert', bad: 'x-circle', info: 'info' }[state] || 'info';
+    return `<li class="${state}"><span class="ck"><i class="ic ic-${icon}" aria-hidden="true"></i></span><span><strong>${esc(title)}</strong>${detail ? ' — ' + esc(detail) : ''}</span></li>`;
+  }
+
+  // Har image ki row — sirf badli hui rows dobara banti hain (chalta hua audio reset na ho)
+  function clipRowHtml(c, running) {
+    const label = c.from === c.to ? `Image ${c.from}` : `Images ${c.from}-${c.to}`;
+    const thumbs = c.thumbs.slice(0, 2).map((t) => `<img src="${esc(t)}" alt="" loading="lazy" />`).join('') +
+      (c.thumbs.length > 2 ? `<span class="clip-more">+${c.thumbs.length - 2}</span>` : '');
+    const status = c.ready
+      ? `<span class="badge clip-ok"><i class="ic ic-check" aria-hidden="true"></i>${fmtSec(c.durationSec)}</span>`
+      : `<span class="badge clip-missing"><i class="ic ic-clock" aria-hidden="true"></i>not generated</span>`;
+    return `<div class="clip-thumbs">${thumbs}</div>
+      <div class="clip-main">
+        <div class="clip-head"><strong>${esc(c.name)}</strong><span class="muted">${label} · ${c.chars} chars</span>${status}</div>
+        <p class="clip-text">${esc(c.text)}</p>
+        ${c.ready ? `<audio controls preload="none" src="${esc(c.url)}"></audio>` : ''}
+        ${c.warning ? `<div class="clip-warn"><i class="ic ic-alert" aria-hidden="true"></i> ${esc(c.warning)}</div>` : ''}
+      </div>
+      <div class="clip-actions">
+        <label class="clip-voice-label"><span class="muted">Voice</span>${voiceSelectHtml(c, running)}</label>
+        ${c.ready ? `<a class="btn small" href="${esc(c.downloadUrl)}"><i class="ic ic-download" aria-hidden="true"></i>MP3</a>` : ''}
+        <button class="btn small" data-regen="${c.idx}" ${running ? 'disabled' : ''}>${c.ready ? '<i class="ic ic-refresh" aria-hidden="true"></i>Regenerate' : '<i class="ic ic-mic" aria-hidden="true"></i>Make this one'}</button>
+      </div>`;
+  }
+
+  // Har image ki apni voice — dropdown (sirf voice; style/temperature/language global Settings se)
+  let voiceOptionsCache = '';
+  function voiceOptionsHtml(defaultVoiceName) {
+    if (voiceOptionsCache) return voiceOptionsCache.replace('__DEFAULT__', esc(defaultVoiceName));
+    const groups = [['character', 'male', 'Character voices · male'], ['character', 'female', 'Character voices · female'], ['classic', 'male', 'Classic · male'], ['classic', 'female', 'Classic · female'], ['classic', 'neutral', 'Classic · neutral']];
+    let html = '<option value="">Default (__DEFAULT__)</option>';
+    for (const [kind, gender, label] of groups) {
+      const list = (media.voiceOptions || []).filter((v) => v.kind === kind && (v.gender || '') === gender);
+      if (!list.length) continue;
+      html += `<optgroup label="${esc(label)}">` + list.map((v) => `<option value="${esc(v.voice)}">${esc(v.name)}${v.pitch ? ' · ' + esc(v.pitch) : ''}</option>`).join('') + '</optgroup>';
+    }
+    voiceOptionsCache = html;
+    return html.replace('__DEFAULT__', esc(defaultVoiceName));
+  }
+  function voiceSelectHtml(c, running) {
+    const opts = voiceOptionsHtml(media.voice.voiceName);
+    const sel = c.isDefaultVoice ? '' : c.voice;
+    // selected attribute lagao
+    const html = opts.replace(`value="${esc(sel)}"`, `value="${esc(sel)}" selected`);
+    return `<select class="clip-voice" data-from="${c.from}" ${running ? 'disabled' : ''} title="Voice for this image only">${html}</select>`;
+  }
+
+  function renderClips(clips, running) {
+    const list = $('clipList');
+    const ids = clips.map((c) => c.idx).join(',');
+    if (list.dataset.ids !== ids) { list.innerHTML = ''; list.dataset.ids = ids; }
+    clips.forEach((c) => {
+      let row = list.querySelector(`[data-idx="${c.idx}"]`);
+      if (!row) { row = document.createElement('div'); row.dataset.idx = c.idx; list.appendChild(row); }
+      const sig = JSON.stringify([c.name, c.ready, c.url, c.warning, c.text, c.chars, c.voice, c.isDefaultVoice, running]);
+      if (row.dataset.sig === sig) return;
+      row.dataset.sig = sig;
+      row.className = 'clip-row ' + (c.ready ? 'ready' : 'missing');
+      row.innerHTML = clipRowHtml(c, running);
+    });
   }
 
   function renderMedia(m) {
     if (!m) return;
     media = m;
-    const s = m.script, st = m.settings;
+    const s = m.script, v = m.voice, sum = m.summary, job = m.job;
+    const running = !!(job && job.status === 'running');
+
+    // Flags / warnings (hamesha — card chhupi ho tab bhi)
+    const flagMsgs = [];
+    const f = m.flags || {};
+    if (f.watermarks && f.watermarks.length)
+      flagMsgs.push('<i class="ic ic-x-circle" aria-hidden="true"></i> Gemini saw site watermark(s) in the images: <strong>' + esc(f.watermarks.join(', ')) + '</strong>. Pirate-aggregator images weaken any fair-use/good-faith defence and tie the video to piracy — prefer official-source images.');
+    (s.warnings || []).forEach((w) => flagMsgs.push('<i class="ic ic-alert" aria-hidden="true"></i> ' + esc(w)));
+    (f.parseWarnings || []).forEach((w) => flagMsgs.push('<i class="ic ic-alert" aria-hidden="true"></i> ' + esc(w)));
+    // ---- Character name checks (roster vs script) ----
+    const na = f.nameAudit || {};
+    if (na.fixed && na.fixed.length) flagMsgs.push('<i class="ic ic-check-circle" aria-hidden="true"></i> Name spellings corrected to the roster: ' + esc(na.fixed.join('; ')) + '.');
+    if (na.nearMatches && na.nearMatches.length) flagMsgs.push('<i class="ic ic-edit" aria-hidden="true"></i> Script spells roster names differently: ' + esc(na.nearMatches.map((x) => `"${x.found}" ×${x.count} (roster: ${x.roster})`).join('; ')) + ' — fix them or Regenerate.');
+    if (na.unknown && na.unknown.length) flagMsgs.push('<i class="ic ic-help" aria-hidden="true"></i> Names in the script that are NOT in the roster: ' + esc(na.unknown.map((x) => `${x.name} ×${x.count}`).join(', ')) + ' — if one is a misspelling of a known character, add it as an alias on the <a href="/projects/<%= project.id %>#characters">roster</a>; if it is a new character, add them there.');
+    if (na.jsonOnly && na.jsonOnly.length) flagMsgs.push('<i class="ic ic-info" aria-hidden="true"></i> Gemini listed ' + esc(na.jsonOnly.join(', ')) + ' as present but the script never uses the name (only a description or a different name) — check who that is.');
+    const ro = f.roster || {};
+    if (ro.pending && ro.pending.length) flagMsgs.push('<i class="ic ic-user" aria-hidden="true"></i> Unnamed / unsure figures (not added to the roster): ' + esc(ro.pending.map((p) => p.name + (p.suggestedRoster ? ` (maybe ${p.suggestedRoster})` : '')).join(', ')) + '. When the story names them, they will be added automatically.');
+    if (ro.ambiguous && ro.ambiguous.length) flagMsgs.push('<i class="ic ic-alert" aria-hidden="true"></i> Ambiguous name' + (ro.ambiguous.length === 1 ? '' : 's') + ' — could be more than one character, so nothing was changed: ' + esc(ro.ambiguous.map((a) => `"${a.name}" → ${a.candidates.join(' or ')}`).join('; ')) + '. Check the script and the <a href="/projects/<%= project.id %>#characters">roster</a>.');
+    if (ro.conflicts && ro.conflicts.length) flagMsgs.push('<i class="ic ic-eye" aria-hidden="true"></i> Appearance changed? ' + esc(ro.conflicts.map((c) => `${c.name}: roster says "${c.stored}", this chapter shows "${c.detected}"`).join('; ')) + ' — update the roster if the character really changed (time skip).');
+    if (ro.skipped && ro.skipped.length) flagMsgs.push('<i class="ic ic-ban" aria-hidden="true"></i> Skipped (you removed these earlier): ' + esc(ro.skipped.map((x) => x.name).join(', ')) + '.');
+    const fb = $('flagsBox');
+    fb.innerHTML = '<ul class="flag-list">' + flagMsgs.map((m) => '<li>' + m + '</li>').join('') + '</ul>';
+    fb.classList.toggle('hidden', !flagMsgs.length);
+
+    if (!SHOW_VOICES) return; // Image Voices card chhupi hai (Settings → secret number se on hoti hai)
     $('mediaSummary').textContent = s.hasScript
       ? `${s.sections} section${s.sections === 1 ? '' : 's'} · ${s.images} images · ${s.chars.toLocaleString()} chars ≈ ${s.estMinutes} min of narration`
       : 'Generate the script first';
 
-    // Flags / warnings
-    const flagMsgs = [];
-    if (m.flags && m.flags.watermarks && m.flags.watermarks.length)
-      flagMsgs.push('⛔ Gemini saw site watermark(s) in the images: <strong>' + esc(m.flags.watermarks.join(', ')) + '</strong>. Pirate-aggregator images weaken any fair-use/good-faith defence and tie the video to piracy — prefer official-source images.');
-    (s.warnings || []).forEach((w) => flagMsgs.push('⚠️ ' + esc(w)));
-    if (m.audio && m.audio.warnings) m.audio.warnings.forEach((w) => flagMsgs.push('🎙️ ' + esc(w)));
-    const fb = $('flagsBox');
-    fb.innerHTML = flagMsgs.join('<br>');
-    fb.classList.toggle('hidden', !flagMsgs.length);
+    // ---- Voice settings (jo har clip par lagti hain) ----
+    $('voiceSettings').innerHTML =
+      `<span class="vs-chip" title="${esc(v.voice)}"><i class="ic ic-volume" aria-hidden="true"></i>Voice: <strong>${esc(v.voiceName)}</strong> <span class="muted">${v.voiceName !== v.voice ? esc(v.voice) : ''}</span></span>` +
+      `<span class="vs-chip"><i class="ic ic-cpu" aria-hidden="true"></i>${esc(v.model)}</span>` +
+      `<span class="vs-chip"><i class="ic ic-thermometer" aria-hidden="true"></i>Temp ${esc(v.temperature)}</span>` +
+      `<span class="vs-chip"><i class="ic ic-globe" aria-hidden="true"></i>${esc(v.language || 'auto')}</span>` +
+      `<span class="vs-chip vs-style" title="${esc(v.style)}"><i class="ic ic-film" aria-hidden="true"></i>Style: ${esc(v.style ? (v.style.length > 70 ? v.style.slice(0, 68) + '…' : v.style) : '—')}</span>` +
+      `<a class="vs-chip vs-link" href="/settings"><i class="ic ic-settings" aria-hidden="true"></i>Change</a>`;
 
-    const vj = m.jobs.voiceover, dj = m.jobs.video;
-    const running = (vj && vj.status === 'running') || (dj && dj.status === 'running');
-
-    // ---- Voiceover ----
-    $('ttsChip').textContent = st.ttsModel + ' · ' + st.ttsVoice;
+    // ---- Generate button + info ----
     const ttsBtn = $('ttsBtn');
-    ttsBtn.disabled = running || !s.hasScript || !st.hasKeys;
-    ttsBtn.textContent = m.audio ? '🔄 Regenerate Voiceover' : '🎙️ Generate Voiceover';
+    ttsBtn.disabled = running || !s.hasScript || !v.hasKeys || !sum.missing;
+    ttsBtn.innerHTML = !sum.total ? '<i class="ic ic-mic" aria-hidden="true"></i>Generate voices'
+      : !sum.missing ? '<i class="ic ic-check-circle" aria-hidden="true"></i>All voices ready'
+      : sum.ready ? `<i class="ic ic-mic" aria-hidden="true"></i>Generate ${sum.missing} remaining voice${sum.missing === 1 ? '' : 's'}`
+      : `<i class="ic ic-mic" aria-hidden="true"></i>Generate all ${sum.total} voices`;
     const ttsInfo = $('ttsInfo');
     ttsInfo.className = 'media-note muted';
-    if (vj && vj.status === 'error') { ttsInfo.textContent = '❌ ' + vj.error; ttsInfo.className = 'media-note status err'; }
-    else if (m.audio) {
-      const reqs = m.audio.requests || m.audio.chunks;
-      ttsInfo.textContent = `${fmtSec(m.audio.totalSec)} · ${reqs} TTS request${reqs === 1 ? '' : 's'} · ${m.audio.voice} (${m.audio.model})` +
-        (m.audio.stale ? ' · ⚠️ script or voice settings changed since — regenerate' : '') +
-        (m.audio.warnings && m.audio.warnings.length ? ` · ⚠️ ${m.audio.warnings.length} warning(s) above` : '');
-      if (m.audio.stale || (m.audio.warnings && m.audio.warnings.length)) ttsInfo.className = 'media-note stale';
-    } else ttsInfo.textContent = s.hasScript ? (st.hasKeys ? `Sections are read in order with a pause between them; ~${Math.max(1, Math.ceil(s.chars / st.ttsMaxChars))} TTS request(s) for this chapter.` : 'Add an API key in Settings first.') : 'Generate the script first.';
-    const tq = st.ttsQuota;
-    if (tq) {
-      const need = Math.max(1, Math.ceil(s.chars / st.ttsMaxChars));
-      const low = tq.totalRemaining < need;
-      ttsInfo.textContent += ` · TTS quota today: ${tq.totalRemaining}/${tq.keys.length * tq.dailyLimit} left (${tq.keys.map((k) => k.remaining).join('+')})` + (low && s.hasScript ? ' ⚠️ not enough for this chapter — resets midnight Pacific' : '');
-      if (low && s.hasScript) ttsInfo.className = 'media-note stale';
+    if (job && job.status === 'error') { ttsInfo.textContent = 'Error: ' + job.error; ttsInfo.className = 'media-note status err'; }
+    else if (!s.hasScript) ttsInfo.textContent = 'Generate the script first.';
+    else if (!v.hasKeys) ttsInfo.textContent = 'Add an API key in Settings first.';
+    else {
+      ttsInfo.textContent = `${sum.ready}/${sum.total} image voices ready` + (sum.ready ? ` · ${fmtSec(sum.totalSec)} total` : '') +
+        (sum.missing ? ` · needs ${sum.missing} TTS request${sum.missing === 1 ? '' : 's'} (1 per image)` : '');
+      const tq = v.ttsQuota;
+      if (tq) {
+        ttsInfo.textContent += ` · TTS quota today: ${tq.totalRemaining}/${tq.keys.length * tq.dailyLimit} left (${tq.keys.map((k) => k.remaining).join('+')})`;
+        if (sum.missing && tq.totalRemaining < sum.missing) {
+          ttsInfo.textContent += ` — only enough for ${tq.totalRemaining} today — finished images stay saved, the rest continue after the reset (midnight Pacific)`;
+          ttsInfo.className = 'media-note stale';
+        }
+      }
     }
-    const audioEl = $('ttsAudio');
-    if (m.audio) { if (audioEl.dataset.src !== m.audio.url) { audioEl.src = m.audio.url; audioEl.dataset.src = m.audio.url; } audioEl.classList.remove('hidden'); $('mp3Link').classList.remove('hidden'); }
-    else { audioEl.classList.add('hidden'); $('mp3Link').classList.add('hidden'); }
-    setProgress('ttsProgress', vj);
-
-    // ---- Video ----
-    $('videoChip').textContent = (st.videoPreset === 'portrait' ? '1080×1920' : '1920×1080') + ' · ' + st.coveragePercent + '% coverage';
-    const videoBtn = $('videoBtn');
-    videoBtn.disabled = running || !m.audio || m.audio.stale || !s.images;
-    videoBtn.textContent = m.video ? '🔄 Re-render Video' : '🎞️ Render Video';
-    const videoInfo = $('videoInfo');
-    videoInfo.className = 'media-note muted';
-    if (dj && dj.status === 'error') { videoInfo.textContent = '❌ ' + dj.error; videoInfo.className = 'media-note status err'; }
-    else if (!m.audio) videoInfo.textContent = 'Generate the voiceover first — the video is cut to its timing.';
-    else if (m.audio.stale) { videoInfo.textContent = '⚠️ Voiceover is out of date — regenerate it before rendering.'; videoInfo.className = 'media-note stale'; }
-    else if (m.video) {
-      videoInfo.textContent = `${fmtSec(m.video.durationSec)} · ${m.video.preset} · ~${m.video.avgShownPercent ?? '?'}% of the chapter's panels shown · no music` +
-        (m.video.stale ? ' · ⚠️ settings/script changed since — re-render' : '');
-      if (m.video.stale) videoInfo.className = 'media-note stale';
-    } else videoInfo.textContent = 'Renders locally with ffmpeg (≈ real-time or faster). Voiceover only, no music.';
-    const videoEl = $('videoPlayer');
-    videoEl.classList.toggle('portrait', st.videoPreset === 'portrait');
-    if (m.video) {
-      if (videoEl.dataset.src !== m.video.url) { videoEl.src = m.video.url; videoEl.dataset.src = m.video.url; }
-      videoEl.classList.remove('hidden');
-      ['mp4Link', 'srtLink', 'descLink'].forEach((id) => $(id).classList.remove('hidden'));
-    } else {
-      videoEl.classList.add('hidden');
-      ['mp4Link', 'srtLink', 'descLink'].forEach((id) => $(id).classList.add('hidden'));
-    }
-    setProgress('videoProgress', dj);
+    $('zipMp3').classList.toggle('hidden', !sum.ready);
+    setProgress('ttsProgress', job);
+    renderClips(m.clips, running);
 
     // ---- Checklist ----
     const items = [];
-    items.push(ck(st.commentaryMode === 'on' ? 'ok' : 'warn', 'Script = own words + narrator commentary',
-      st.commentaryMode === 'on' ? 'Commentary layer ON (hook, reactions/analysis, closing take) — regenerate old scripts to apply it.' : 'Commentary layer is OFF — pure retelling is treated as reused/non-transformative. Turn it on in Settings or add commentary by hand.'));
-    items.push(ck(st.coveragePercent <= 50 ? 'ok' : 'warn', `Strip coverage ${st.coveragePercent}%`,
-      st.coveragePercent <= 50 ? "≤50% stays within WEBTOON's fan-video limit (≤20 panels or 50% of the episode)." : 'Above 50% — exceeds the only published publisher limit (WEBTOON). Lower it in Settings.'));
+    items.push(ck(v.commentaryMode === 'on' ? 'ok' : 'warn', 'Script = own words + narrator commentary',
+      v.commentaryMode === 'on' ? 'Commentary layer ON (hook, reactions/analysis, closing take) — regenerate old scripts to apply it.' : 'Commentary layer is OFF — pure retelling is treated as reused/non-transformative. Turn it on in Settings or add commentary by hand.'));
+    items.push(ck('info', 'Show ≤50% of the chapter in your edit', "WEBTOON's fan-video limit: at most 20 panels or 50% of a free episode, whichever is less. Don't scroll the full chapter."));
     items.push(ck(m.project.platform ? 'ok' : 'warn', 'Official source credited',
-      m.project.platform ? `End card + description point to ${m.project.platform}${m.project.official_url ? ' (' + m.project.official_url + ')' : ''}.` : 'Set the official platform/URL on the project page (required by WEBTOON rules; never link aggregators).'));
+      m.project.platform ? `Description points to ${m.project.platform}${m.project.official_url ? ' (' + m.project.official_url + ')' : ''}.` : 'Set the official platform/URL on the project page (required by WEBTOON rules; never link aggregators).'));
     if (m.flags && m.flags.watermarks && m.flags.watermarks.length) items.push(ck('bad', 'Aggregator watermark in images: ' + m.flags.watermarks.join(', '), 'Use free, official-platform episodes only. Cropping a watermark does not change the legal status.'));
     else if (m.flags && m.flags.watermarks) items.push(ck('ok', 'No site watermark reported', 'Gemini saw no website/scanlation credit in the images.'));
     else items.push(ck('info', 'Watermark scan not run yet', 'Regenerate the script once — Gemini now reports any site watermark it sees in the images.'));
     items.push(ck('info', 'Free episode only', 'Do not recap Fast Pass / Daily Pass / paywalled or early-access chapters — only episodes free on the official platform.'));
-    items.push(ck('ok', 'No background music', 'Add music only from the YouTube Audio Library (Content ID-safe); CC-BY tracks need a credit line.'));
+    items.push(ck('info', 'Music: YouTube Audio Library only', 'Other "royalty-free" packs can still be claimed; CC-BY tracks need a credit line.'));
     items.push(ck('info', 'AI disclosure: not required', 'Generic TTS over drawn panels is not "realistic altered content". Ticking it anyway has no monetization cost.'));
     items.push(ck('info', 'Audience: not made for kids', 'Choose "No, it\'s not made for kids" on upload.'));
     (m.listing.warnings || []).forEach((w) => items.push(ck('warn', w)));
-    items.push(ck('info', 'Keep manifest.json', 'Saved with every render: source, coverage %, voice model, script size — evidence if you ever need to dispute a claim.'));
     $('checklist').innerHTML = items.join('');
     $('ytTitle').value = m.listing.title;
     $('ytDesc').value = m.listing.description;
 
     // ---- Transitions → toasts ----
-    for (const t of ['voiceover', 'video']) {
-      const prev = lastJobs[t], cur = m.jobs[t];
-      if (prev && prev.status === 'running' && cur && cur.status === 'done') toast(t === 'voiceover' ? '🎙️ Voiceover ready!' : '🎞️ Video ready!', 'done');
-      if (prev && prev.status === 'running' && cur && cur.status === 'error') toast('❌ ' + t + ' failed — see details', 'err');
-      lastJobs[t] = cur;
-    }
+    if (lastJob && lastJob.status === 'running' && job && job.status === 'done') toast('Voices ready', 'done');
+    if (lastJob && lastJob.status === 'running' && job && job.status === 'error') toast('Voice generation stopped — see details', 'err');
+    lastJob = job;
     if (running && !pollTimer) pollTimer = setInterval(pollMedia, 2000);
     if (!running && pollTimer) { clearInterval(pollTimer); pollTimer = null; }
   }
@@ -540,23 +657,48 @@
     } catch {}
   }
 
-  async function startJob(kind) {
+  async function startVoices(idx) {
     try {
-      const res = await fetch(baseUrl + '/' + kind, { method: 'POST' });
+      const res = await fetch(baseUrl + '/voiceover', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(idx === undefined ? {} : { idx }),
+      });
       const data = await res.json();
       if (!data.ok) throw new Error(data.error || 'Could not start');
-      toast(kind === 'voiceover' ? '🎙️ Generating voiceover…' : '🎞️ Rendering video…', 'gen');
+      toast(idx === undefined ? 'Generating voices…' : 'Making a new take…', 'gen');
       renderMedia(data.media);
     } catch (err) {
-      toast('❌ ' + err.message, 'err');
+      toast(err.message, 'err');
     }
   }
-  $('ttsBtn').addEventListener('click', () => startJob('voiceover'));
-  $('videoBtn').addEventListener('click', () => startJob('video'));
-  $('copyTitle').addEventListener('click', async () => { await navigator.clipboard.writeText($('ytTitle').value); toast('📋 Title copied', 'done'); });
-  $('copyDesc').addEventListener('click', async () => { await navigator.clipboard.writeText($('ytDesc').value); toast('📋 Description copied', 'done'); });
+  if (SHOW_VOICES) {
+    $('ttsBtn').addEventListener('click', () => startVoices());
+    $('clipList').addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-regen]');
+      if (btn) startVoices(parseInt(btn.dataset.regen, 10));
+    });
+    // Per-image voice change → save → row dobara (nayi voice = "not generated" jab tak banao nahi)
+    $('clipList').addEventListener('change', async (e) => {
+      const sel = e.target.closest('select.clip-voice');
+      if (!sel) return;
+      sel.disabled = true;
+      try {
+        const res = await fetch(baseUrl + '/clip-voice', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ from: parseInt(sel.dataset.from, 10), voice: sel.value }) });
+        const data = await res.json();
+        if (!data.ok) throw new Error(data.error || 'Could not save');
+        toast(sel.value ? 'Voice set for this image' : 'Back to the default voice', 'done');
+        renderMedia(data.media);
+      } catch (err) {
+        toast(err.message, 'err');
+        sel.disabled = false;
+      }
+    });
+    $('copyTitle').addEventListener('click', async () => { await navigator.clipboard.writeText($('ytTitle').value); toast('Title copied', 'done'); flashBtn($('copyTitle'), 'Copied'); });
+    $('copyDesc').addEventListener('click', async () => { await navigator.clipboard.writeText($('ytDesc').value); toast('Description copied', 'done'); flashBtn($('copyDesc'), 'Copied'); });
+  }
 
-  lastJobs = { voiceover: media && media.jobs.voiceover, video: media && media.jobs.video };
+  lastJob = media && media.job;
   renderMedia(media);
 </script>
 

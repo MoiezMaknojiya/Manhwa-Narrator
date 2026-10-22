@@ -19,15 +19,13 @@ Research date: **10 October 2026**. Everything below was checked against officia
 |---|---|---|
 | Script must contain narrator commentary, not only retelling | `prompts/commentary-addon.md`, appended when **Settings → Script policy → Commentary layer** is on | ON |
 | No verbatim dialogue | base prompt (own words rule) + commentary addon | always |
-| Show only part of each strip | **Settings → Video → Strip coverage** (`coveragePercent`), excerpt mode in `lib/video.js` | 50% |
-| Credit the official source | Project page → Official Source (author, platform, URL) → end card + description credit block | warns until set |
+| Show only part of each strip | your own video edit — the checklist reminds you of the 50% / 20-panel limit (the app no longer renders video) | 50% |
+| Credit the official source | Project page → Official Source (author, platform, URL) → description credit block | warns until set |
 | Detect aggregator watermarks | Gemini reports site watermarks during script generation (`===SOURCE===` block) → chapter flags → checklist warning | automatic |
 | No pirate names/links in metadata | `lib/publish.js` checks title/project info against a list of aggregator hosts and risky phrases | automatic |
-| No music | the renderer never adds music; the checklist reminds you to use only the YouTube Audio Library | always |
+| No music | the app makes voice only; the checklist reminds you to use only the YouTube Audio Library | always |
 | AI disclosure guidance | checklist item (not required, optional) | info |
 | Not made for kids | checklist item | info |
-| Evidence trail | `manifest.json` next to every render: source, coverage %, voice model, script size, listing warnings | automatic |
-| Trim site banners | **Settings → Video → Cut from top of first image / bottom of last image** | 0 px |
 
 ## What is still risky no matter what
 
@@ -42,11 +40,11 @@ Research date: **10 October 2026**. Everything below was checked against officia
 
 1. Generate the script with the commentary layer on. Read it; add your own opinion where it feels thin.
 2. Fill in the project's official source. Never paste an aggregator link anywhere.
-3. Keep strip coverage at 50% or lower. Prefer 16:9 long-form over Shorts (Shorts rules are stricter about "no original content").
-4. Generate the voiceover, render the video, download `captions.srt` and upload it as subtitles.
+3. In your edit, show 50% of the chapter or less (max 20 panels on WEBTOON). Prefer 16:9 long-form over Shorts (Shorts rules are stricter about "no original content").
+4. Generate the image voices, download the ZIP and cut the video in your editor (one clip per image).
 5. Use the suggested title/description (credit block included). Avoid "full chapter", "read free", "leaked".
 6. Set "not made for kids". Add music only from the YouTube Audio Library, if at all.
-7. Keep `manifest.json`. If a strike lands, do not mass-upload; read YouTube's counter-notice flow before acting.
+7. Keep your script and source notes. If a strike lands, do not mass-upload; read YouTube's counter-notice flow before acting.
 
 ## Sources (checked 10 Oct 2026)
 

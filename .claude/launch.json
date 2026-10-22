@@ -4,8 +4,19 @@
     {
       "name": "manhwa-narrator",
       "runtimeExecutable": "node",
-      "runtimeArgs": ["server.js"],
+      "runtimeArgs": [
+        "server.js"
+      ],
       "port": 3000
+    },
+    {
+      "name": "manhwa-narrator-3001",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "-e",
+        "process.env.PORT='3001';require('./server.js')"
+      ],
+      "port": 3001
     }
   ]
 }

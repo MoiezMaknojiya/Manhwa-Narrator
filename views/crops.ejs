@@ -1,0 +1,371 @@
+<%- include('partials/head', { title: 'Crop panels — ' + chapter.title }) %>
+
+<section class="hero crop-hero">
+  <div>
+    <p class="crumbs">
+      <a href="/">Projects</a> <span class="crumb-sep">/</span>
+      <a href="/projects/<%= project.id %>"><%= project.name %></a> <span class="crumb-sep">/</span>
+      <a href="/projects/<%= project.id %>/chapters/<%= chapter.id %>"><%= chapter.title %></a> <span class="crumb-sep">/</span>
+      <span>Crop panels</span>
+    </p>
+    <h1>Crop panels</h1>
+    <p class="muted small-note">Pick the panels you will actually show in the video. Each image has a copyright budget — the total height of its crops stays under <strong id="budgetLabel"><%= budgetPercent %>%</strong> of the page.</p>
+  </div>
+  <div class="page-actions crop-actions">
+    <label class="crop-budget">
+      <span>Budget</span>
+      <select id="budgetSelect" aria-label="Copyright budget per image">
+        <% [30, 35, 40, 45, 50].forEach(function (p) { %><option value="<%= p %>" <%= p === budgetPercent ? 'selected' : '' %>><%= p %>%</option><% }) %>
+      </select>
+    </label>
+    <span class="save-state muted small-note" id="saveState" aria-live="polite">Saved</span>
+    <button class="btn" id="zipBtn" type="button" title="Download the crops of the checked images as a ZIP (01a.jpg, 01b.jpg …)">
+      <i class="ic ic-download" aria-hidden="true"></i>
+      Download ZIP <span class="count-chip" id="zipCount">0</span>
+    </button>
+    <button class="btn primary" id="exportBtn" type="button" title="Write the crops straight into a folder on this PC (for CapCut)">
+      <i class="ic ic-folder" aria-hidden="true"></i>
+      Export to folder
+    </button>
+  </div>
+</section>
+
+<div class="export-bar hidden" id="exportBar">
+  <label class="export-field"><span>Folder on this PC</span><input type="text" id="exportFolder" value="<%= folder %>" spellcheck="false" placeholder="C:\Users\you\Desktop\crops" /></label>
+  <button class="btn small" id="browseBtn" type="button" title="Pick a folder in a Windows window — the files are written as soon as you choose it"><i class="ic ic-folder" aria-hidden="true"></i>Browse…</button>
+  <button class="btn primary small" id="exportGo" type="button" title="Write the crops into the folder typed above"><i class="ic ic-save" aria-hidden="true"></i>Write files</button>
+  <button class="btn small" id="exportCancel" type="button">Cancel</button>
+  <span class="muted small-note" id="exportStatus" aria-live="polite"></span>
+  <button class="btn small hidden" id="openFolderBtn" type="button" title="Show the folder in Explorer"><i class="ic ic-external-link" aria-hidden="true"></i>Open folder</button>
+</div>
+
+<% if (!images.length) { %>
+  <div class="empty-state"><i class="ic ic-image empty-icon" aria-hidden="true"></i><p>No images in this chapter yet — <a href="/projects/<%= project.id %>/chapters/<%= chapter.id %>">upload them first</a>.</p></div>
+<% } else { %>
+<div class="crop-layout">
+  <!-- ---------- Left: image list ---------- -->
+  <aside class="card crop-list" aria-label="Images">
+    <div class="crop-list-head">
+      <label class="check-all"><input type="checkbox" id="checkAll" checked /> <span>Include in export</span></label>
+      <span class="muted small-note" id="listSummary"></span>
+    </div>
+    <div class="crop-rows" id="cropRows" role="list"></div>
+  </aside>
+
+  <!-- ---------- Centre: stage ---------- -->
+  <main class="card crop-stage-card">
+    <div class="stage-toolbar">
+      <div class="stage-title"><strong id="stageTitle">Image 1</strong> <span class="muted small-note" id="stageMeta"></span></div>
+      <div class="stage-tools">
+        <button class="btn small" id="detectBtn" type="button" title="Find panel boundaries automatically, then click a suggestion to add it">
+          <i class="ic ic-sparkles" aria-hidden="true"></i>
+          Auto-detect panels
+        </button>
+        <button class="btn small" id="addBtn" type="button" title="Add a 1000 px crop at the middle of the view (or double-click the image)">
+          <i class="ic ic-plus" aria-hidden="true"></i>
+          Add crop
+        </button>
+        <label class="toggle-mini" title="Off = crop always spans the full width (recommended). On = drag the left/right edges too."><input type="checkbox" id="freeWidth" /> <span>Free width</span></label>
+        <span class="muted small-note stage-hint">Drag a box to move · drag its edge to resize · Delete removes · ← → switch image</span>
+      </div>
+    </div>
+    <div class="stage-scroll" id="stageScroll" tabindex="0" aria-label="Image with crop boxes">
+      <div class="stage" id="stage">
+        <img id="stageImg" alt="" draggable="false" />
+        <div class="overlay" id="overlay"></div>
+      </div>
+    </div>
+  </main>
+
+  <!-- ---------- Right: details ---------- -->
+  <aside class="card crop-side" aria-label="Crops of this image">
+    <div class="side-head">
+      <h3 id="sideTitle">Crops</h3>
+      <span class="muted small-note" id="sideCount"></span>
+    </div>
+    <div class="budget-meter" id="budgetMeter">
+      <div class="budget-bar"><div class="budget-fill" id="budgetFill"></div></div>
+      <div class="budget-text"><span id="budgetUsed">0</span> / <span id="budgetMax">0</span> px <span class="muted">used of this image's budget</span></div>
+      <div class="budget-warn hidden" id="budgetWarn"></div>
+    </div>
+    <div class="side-quick">
+      <span class="muted small-note">Quick split:</span>
+      <button class="btn tiny" type="button" data-split="2">2 crops</button>
+      <button class="btn tiny" type="button" data-split="3">3 crops</button>
+      <button class="btn tiny" type="button" data-split="4">4 crops</button>
+      <button class="btn tiny ghost-danger" type="button" id="clearImageBtn" title="Remove all crops of this image">Clear</button>
+    </div>
+    <div class="side-list" id="sideList" role="list"></div>
+    <details class="side-tips">
+      <summary class="muted small-note">Why a budget?</summary>
+      <p class="muted small-note">Publishers tolerate recaps that show only part of a chapter (WEBTOON's published limit: 50% / 20 panels). Keeping each image's crops under the budget — and never showing a full page — is your strongest protection. Crops export at source resolution (no upscaling), named <code>01a.jpg, 01b.jpg…</code> in order for CapCut.</p>
+    </details>
+  </aside>
+</div>
+<% } %>
+
+<script>
+(function () {
+  const IMAGES = <%- JSON.stringify(images).replace(/</g, '\\u003c') %>;
+  if (!IMAGES.length) return;
+  const base = '/projects/<%= project.id %>/chapters/<%= chapter.id %>/crops';
+  let budgetPct = <%= budgetPercent %>;
+  const STAGE_W = 620;
+  const DEFAULT_H = 1000;
+  const state = { cur: 0, sel: -1, suggestions: [], checked: new Set(IMAGES.map((im) => im.index)), free: false, dirty: false };
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const letter = (k) => 'abcdefghijklmnopqrstuvwxyz'[k] || String(k + 1);
+  const pad = (n) => String(n).padStart(2, '0');
+  const img = () => IMAGES[state.cur];
+  const budgetOf = (im) => Math.floor(im.height * budgetPct / 100);
+  const usedOf = (im) => im.crops.reduce((a, c) => a + c.h, 0);
+  const scaleOf = (im) => STAGE_W / im.width;
+  const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+  const sortCrops = (im) => im.crops.sort((a, b) => a.y - b.y);
+
+  // ---------- save (debounced autosave) ----------
+  let saveTimer = null, saving = false, queued = false;
+  function markDirty() { state.dirty = true; $('saveState').textContent = 'Unsaved…'; clearTimeout(saveTimer); saveTimer = setTimeout(() => save(), 700); }
+  async function save() {
+    if (saving) { queued = true; return; }
+    saving = true; $('saveState').textContent = 'Saving…';
+    const byFile = {}; IMAGES.forEach((im) => { if (im.crops.length) byFile[im.file] = im.crops; });
+    try {
+      const res = await fetch(base, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ byFile, budgetPercent: budgetPct }) });
+      const d = await res.json();
+      if (!d.ok) throw new Error(d.error || 'save failed');
+      state.dirty = false; $('saveState').textContent = 'Saved'; $('saveState').classList.remove('status', 'err');
+    } catch (e) { $('saveState').textContent = 'Not saved — ' + e.message; $('saveState').classList.add('status', 'err'); }
+    saving = false;
+    if (queued) { queued = false; save(); }
+  }
+  window.addEventListener('beforeunload', (e) => { if (state.dirty) { e.preventDefault(); e.returnValue = ''; } });
+
+  // ---------- left list ----------
+  function renderList() {
+    const rows = $('cropRows');
+    rows.innerHTML = IMAGES.map((im, i) => {
+      const used = usedOf(im), max = budgetOf(im), pct = max ? used / max : 0;
+      const cls = pct > 1 ? 'over' : pct > 0.8 ? 'warn' : 'ok';
+      return `<div class="crop-row ${i === state.cur ? 'active' : ''}" role="listitem" data-i="${i}">
+        <input type="checkbox" class="row-check" data-index="${im.index}" ${state.checked.has(im.index) ? 'checked' : ''} aria-label="Include image ${im.index} in export" />
+        <button type="button" class="row-main" data-i="${i}" aria-label="Open image ${im.index}">
+          <img src="${esc(im.url)}" alt="" loading="lazy" />
+          <span class="row-text"><strong>#${pad(im.index)}</strong><span class="muted">${im.width}×${im.height}</span>
+            <span class="row-meter ${cls}" title="${used} / ${max} px"><i style="width:${Math.min(100, Math.round(pct * 100))}%"></i></span></span>
+          <span class="count-chip ${im.crops.length ? '' : 'dim'}">${im.crops.length}</span>
+        </button></div>`;
+    }).join('');
+    const total = IMAGES.reduce((a, im) => a + im.crops.length, 0);
+    const withCrops = IMAGES.filter((im) => im.crops.length).length;
+    $('listSummary').textContent = `${total} crop${total === 1 ? '' : 's'} on ${withCrops}/${IMAGES.length} images`;
+    const zipN = IMAGES.filter((im) => state.checked.has(im.index)).reduce((a, im) => a + im.crops.length, 0);
+    $('zipCount').textContent = zipN;
+    $('zipBtn').disabled = !zipN; $('exportBtn').disabled = !zipN;
+  }
+  $('cropRows').addEventListener('click', (e) => {
+    const b = e.target.closest('.row-main'); if (b) openImage(parseInt(b.dataset.i, 10));
+  });
+  $('cropRows').addEventListener('change', (e) => {
+    const c = e.target.closest('.row-check'); if (!c) return;
+    const idx = parseInt(c.dataset.index, 10); if (c.checked) state.checked.add(idx); else state.checked.delete(idx);
+    $('checkAll').checked = state.checked.size === IMAGES.length; renderList();
+  });
+  $('checkAll').addEventListener('change', (e) => { state.checked = new Set(e.target.checked ? IMAGES.map((im) => im.index) : []); renderList(); });
+
+  // ---------- stage ----------
+  function openImage(i) {
+    state.cur = clamp(i, 0, IMAGES.length - 1); state.sel = -1; state.suggestions = [];
+    const im = img(), s = scaleOf(im);
+    $('stageTitle').textContent = `Image ${im.index}`;
+    $('stageMeta').textContent = `${im.original || im.file} · ${im.width}×${im.height}`;
+    $('stageImg').src = im.url; $('stageImg').style.width = STAGE_W + 'px'; $('stageImg').style.height = Math.round(im.height * s) + 'px';
+    $('stage').style.width = STAGE_W + 'px'; $('stage').style.height = Math.round(im.height * s) + 'px';
+    $('stageScroll').scrollTop = 0;
+    renderList(); renderOverlay(); renderSide();
+  }
+  function renderOverlay() {
+    const im = img(), s = scaleOf(im), ov = $('overlay');
+    const free = state.free;
+    ov.innerHTML = state.suggestions.map((p, k) => `<button type="button" class="panel-sug" data-k="${k}" style="top:${p.y0 * s}px;height:${(p.y1 - p.y0) * s}px" title="Click to add this panel as a crop"><span>panel ${k + 1} · ${p.y1 - p.y0} px</span></button>`).join('') +
+      sortCrops(im).map((c, k) => `<div class="crop-box ${k === state.sel ? 'selected' : ''}" data-k="${k}" style="left:${c.x * s}px;top:${c.y * s}px;width:${c.w * s}px;height:${c.h * s}px" tabindex="0" role="group" aria-label="Crop ${pad(im.index)}${letter(k)}">
+        <span class="crop-label">${pad(im.index)}${letter(k)} · ${c.w}×${c.h}</span>
+        <button type="button" class="crop-del" data-k="${k}" aria-label="Delete crop ${letter(k)}" title="Delete">×</button>
+        <i class="h h-n" data-h="n"></i><i class="h h-s" data-h="s"></i>${free ? '<i class="h h-w" data-h="w"></i><i class="h h-e" data-h="e"></i>' : ''}
+      </div>`).join('');
+  }
+  function renderSide() {
+    const im = img(), used = usedOf(im), max = budgetOf(im), pct = max ? used / max : 0;
+    $('sideTitle').textContent = `Image ${im.index} — ${im.crops.length} crop${im.crops.length === 1 ? '' : 's'}`;
+    $('sideCount').textContent = im.crops.length ? `${Math.round(used / im.height * 100)}% of the page` : '';
+    $('budgetUsed').textContent = used.toLocaleString(); $('budgetMax').textContent = max.toLocaleString();
+    const fill = $('budgetFill'); fill.style.width = Math.min(100, Math.round(pct * 100)) + '%';
+    fill.className = 'budget-fill ' + (pct > 1 ? 'over' : pct > 0.8 ? 'warn' : 'ok');
+    const warn = $('budgetWarn');
+    if (pct > 1) { warn.textContent = `Over budget by ${(used - max).toLocaleString()} px — shorten or remove a crop.`; warn.classList.remove('hidden'); }
+    else if (pct > 0.8) { warn.textContent = 'Close to the budget — fine, but no more crops here.'; warn.classList.remove('hidden'); }
+    else warn.classList.add('hidden');
+    const ts = 132 / im.width;
+    $('sideList').innerHTML = im.crops.length ? sortCrops(im).map((c, k) => `<div class="side-item ${k === state.sel ? 'selected' : ''}" role="listitem" data-k="${k}">
+        <div class="side-thumb" style="width:${Math.round(c.w * ts)}px;height:${Math.round(c.h * ts)}px;background-image:url('${esc(im.url)}');background-size:${Math.round(im.width * ts)}px auto;background-position:-${Math.round(c.x * ts)}px -${Math.round(c.y * ts)}px"></div>
+        <div class="side-info"><strong>${pad(im.index)}${letter(k)}</strong><span class="muted">${c.w} × ${c.h} px · y ${c.y}</span>
+          <span class="side-actions"><button type="button" class="btn tiny" data-act="h1000" data-k="${k}" title="Set height to 1000 px">1000</button><button type="button" class="btn tiny ghost-danger" data-act="del" data-k="${k}">Delete</button></span></div>
+      </div>`).join('') :
+      `<div class="side-empty muted small-note">No crops yet. Click <strong>Auto-detect panels</strong> and pick a panel, or <strong>Add crop</strong>, or double-click the image.</div>`;
+  }
+  $('sideList').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-act]');
+    if (b) { const k = parseInt(b.dataset.k, 10); if (b.dataset.act === 'del') return removeCrop(k); if (b.dataset.act === 'h1000') { const im = img(); const c = sortCrops(im)[k]; c.h = clamp(DEFAULT_H, 16, im.height - c.y); afterChange(k); } return; }
+    const it = e.target.closest('.side-item'); if (it) selectCrop(parseInt(it.dataset.k, 10), true);
+  });
+  function afterChange(k) { const im = img(); sortCrops(im); state.sel = k; renderOverlay(); renderSide(); renderList(); markDirty(); }
+  function selectCrop(k, scroll) {
+    state.sel = k; renderOverlay(); renderSide();
+    if (scroll) { const im = img(), c = sortCrops(im)[k]; if (c) $('stageScroll').scrollTo({ top: Math.max(0, c.y * scaleOf(im) - 80), behavior: prefersReduced ? 'auto' : 'smooth' }); }
+  }
+  function addCrop(rect) {
+    const im = img();
+    const r = { x: clamp(Math.round(rect.x || 0), 0, im.width - 16), y: clamp(Math.round(rect.y), 0, im.height - 16), w: 0, h: 0 };
+    r.w = clamp(Math.round(rect.w || im.width), 16, im.width - r.x); r.h = clamp(Math.round(rect.h || DEFAULT_H), 16, im.height - r.y);
+    im.crops.push(r); sortCrops(im);
+    afterChange(im.crops.indexOf(r));
+  }
+  const undoStack = []; // Ctrl+Z — aakhri delete wapas
+  function removeCrop(k) { const im = img(); const [gone] = sortCrops(im).splice(k, 1); if (gone) undoStack.push({ im, crop: gone }); state.sel = -1; renderOverlay(); renderSide(); renderList(); markDirty(); toast('Crop removed — Ctrl+Z to undo', 'done'); }
+  function undo() { const u = undoStack.pop(); if (!u) return; u.im.crops.push(u.crop); sortCrops(u.im); if (u.im !== img()) openImage(IMAGES.indexOf(u.im)); state.sel = u.im.crops.indexOf(u.crop); renderOverlay(); renderSide(); renderList(); markDirty(); }
+  $('addBtn').addEventListener('click', () => {
+    const im = img(), s = scaleOf(im), sc = $('stageScroll');
+    const midY = (sc.scrollTop + sc.clientHeight / 2) / s;
+    addCrop({ y: midY - DEFAULT_H / 2, h: DEFAULT_H });
+  });
+  $('stage').addEventListener('dblclick', (e) => {
+    if (e.target.closest('.crop-box') || e.target.closest('.panel-sug')) return;
+    const im = img(), s = scaleOf(im), rect = $('stage').getBoundingClientRect();
+    addCrop({ y: (e.clientY - rect.top) / s - DEFAULT_H / 2, h: DEFAULT_H });
+  });
+  $('clearImageBtn').addEventListener('click', async () => { const im = img(); if (!im.crops.length) return; if (!(await confirmDialog(`Remove all ${im.crops.length} crops of image ${im.index}?`, { title: 'Clear crops', confirmText: 'Remove all' }))) return; im.crops = []; state.sel = -1; renderOverlay(); renderSide(); renderList(); markDirty(); });
+  document.querySelectorAll('[data-split]').forEach((b) => b.addEventListener('click', async () => {
+    const n = parseInt(b.dataset.split, 10), im = img(), max = budgetOf(im), h = Math.floor(max / n), seg = im.height / n;
+    if (im.crops.length && !(await confirmDialog(`Replace the ${im.crops.length} existing crop(s) with ${n} evenly spaced crops of ${h} px?`, { title: 'Quick split', confirmText: 'Replace', danger: false }))) return;
+    im.crops = Array.from({ length: n }, (_, i) => ({ x: 0, y: Math.round(i * seg + (seg - h) / 2), w: im.width, h }));
+    state.sel = -1; renderOverlay(); renderSide(); renderList(); markDirty();
+  }));
+  $('freeWidth').addEventListener('change', (e) => { state.free = e.target.checked; renderOverlay(); });
+
+  // ---------- auto-detect ----------
+  $('detectBtn').addEventListener('click', async () => {
+    const im = img(); const btn = $('detectBtn'); btn.disabled = true; const old = btn.innerHTML; btn.textContent = 'Detecting…';
+    try {
+      const res = await fetch(`${base}/panels?file=${encodeURIComponent(im.file)}`); const d = await res.json();
+      if (!d.ok) throw new Error(d.error || 'failed');
+      state.suggestions = d.panels.filter((p) => !im.crops.some((c) => Math.abs(c.y - p.y0) < 8 && Math.abs(c.h - (p.y1 - p.y0)) < 8));
+      renderOverlay();
+      toast(state.suggestions.length ? `${state.suggestions.length} panel suggestion(s) — click one to add it` : 'No clear gutters found — add crops by hand (double-click the image)', state.suggestions.length ? 'done' : 'warn');
+    } catch (e) { toast(e.message, 'err'); }
+    btn.disabled = false; btn.innerHTML = old;
+  });
+
+  // ---------- drag / resize ----------
+  let drag = null;
+  $('overlay').addEventListener('pointerdown', (e) => {
+    const sug = e.target.closest('.panel-sug');
+    if (sug) { const k = parseInt(sug.dataset.k, 10); const p = state.suggestions[k]; state.suggestions.splice(k, 1); addCrop({ x: 0, y: p.y0, w: img().width, h: p.y1 - p.y0 }); return; }
+    const del = e.target.closest('.crop-del'); if (del) { removeCrop(parseInt(del.dataset.k, 10)); return; }
+    const box = e.target.closest('.crop-box'); if (!box) return;
+    const k = parseInt(box.dataset.k, 10); const im = img(); const c = sortCrops(im)[k];
+    const handle = e.target.closest('.h') ? e.target.dataset.h : 'move';
+    drag = { k, mode: handle, startX: e.clientX, startY: e.clientY, o: { ...c }, s: scaleOf(im), im };
+    state.sel = k; renderOverlay(); renderSide();
+    box.setPointerCapture && box.setPointerCapture(e.pointerId);
+    e.preventDefault();
+  });
+  document.addEventListener('pointermove', (e) => {
+    if (!drag) return;
+    const { im, s, o, mode } = drag; const dx = (e.clientX - drag.startX) / s, dy = (e.clientY - drag.startY) / s;
+    const c = sortCrops(im)[drag.k]; if (!c) { drag = null; return; }
+    if (mode === 'move') { c.y = clamp(Math.round(o.y + dy), 0, im.height - o.h); if (state.free) c.x = clamp(Math.round(o.x + dx), 0, im.width - o.w); }
+    else if (mode === 's') c.h = clamp(Math.round(o.h + dy), 16, im.height - o.y);
+    else if (mode === 'n') { const ny = clamp(Math.round(o.y + dy), 0, o.y + o.h - 16); c.h = o.h + (o.y - ny); c.y = ny; }
+    else if (mode === 'e') c.w = clamp(Math.round(o.w + dx), 16, im.width - o.x);
+    else if (mode === 'w') { const nx = clamp(Math.round(o.x + dx), 0, o.x + o.w - 16); c.w = o.w + (o.x - nx); c.x = nx; }
+    // Live update without full re-render
+    const el = $('overlay').querySelector(`.crop-box[data-k="${drag.k}"]`);
+    if (el) { el.style.left = c.x * s + 'px'; el.style.top = c.y * s + 'px'; el.style.width = c.w * s + 'px'; el.style.height = c.h * s + 'px'; el.querySelector('.crop-label').textContent = `${pad(im.index)}${letter(drag.k)} · ${c.w}×${c.h}`; }
+    renderSide();
+  });
+  document.addEventListener('pointerup', () => { if (!drag) return; const k = drag.k; drag = null; const im = img(); sortCrops(im); afterChange(k); });
+
+  // ---------- keyboard ----------
+  document.addEventListener('keydown', (e) => {
+    if (['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement.tagName)) return;
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { undo(); e.preventDefault(); return; }
+    const im = img();
+    if (e.key === 'ArrowLeft' && state.sel < 0) { openImage(state.cur - 1); e.preventDefault(); return; }
+    if (e.key === 'ArrowRight' && state.sel < 0) { openImage(state.cur + 1); e.preventDefault(); return; }
+    if (e.key === 'Escape') { state.sel = -1; renderOverlay(); renderSide(); return; }
+    if (state.sel < 0) return;
+    const c = sortCrops(im)[state.sel]; if (!c) return;
+    const step = e.shiftKey ? 50 : 10;
+    if (e.key === 'Delete' || e.key === 'Backspace') { removeCrop(state.sel); e.preventDefault(); }
+    else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+      const d = e.key === 'ArrowUp' ? -step : step;
+      if (e.altKey) c.h = clamp(c.h + d, 16, im.height - c.y); else c.y = clamp(c.y + d, 0, im.height - c.h);
+      afterChange(state.sel); e.preventDefault();
+    }
+  });
+
+  // ---------- budget select ----------
+  $('budgetSelect').addEventListener('change', (e) => { budgetPct = parseInt(e.target.value, 10); $('budgetLabel').textContent = budgetPct + '%'; renderList(); renderSide(); markDirty(); });
+
+  // ---------- download / export ----------
+  const selectedParam = () => [...state.checked].sort((a, b) => a - b).join(',');
+  $('zipBtn').addEventListener('click', async () => { clearTimeout(saveTimer); await save(); if (state.dirty) return toast('Could not save — fix the error first', 'err'); window.location.href = `${base}/download.zip?images=${selectedParam()}`; });
+  $('exportBtn').addEventListener('click', () => { $('exportBar').classList.toggle('hidden'); if (!$('exportBar').classList.contains('hidden')) $('browseBtn').focus(); });
+  $('exportCancel').addEventListener('click', () => $('exportBar').classList.add('hidden'));
+  const setExportStatus = (msg, cls) => { const st = $('exportStatus'); st.textContent = msg; st.className = 'small-note ' + (cls || 'muted'); };
+  const exportBusy = (on) => { $('exportGo').disabled = on; $('browseBtn').disabled = on; };
+  async function writeFiles() {
+    clearTimeout(saveTimer); await save(); if (state.dirty) { toast('Could not save — fix the error first', 'err'); return false; }
+    const folder = $('exportFolder').value.trim();
+    if (!folder) { setExportStatus('Choose or type a folder first.', 'status err'); $('exportFolder').focus(); return false; }
+    setExportStatus('Writing files…'); exportBusy(true); $('openFolderBtn').classList.add('hidden');
+    try {
+      const res = await fetch(`${base}/export`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ folder, images: selectedParam() }) });
+      const d = await res.json(); if (!d.ok) throw new Error(d.error || 'export failed');
+      $('exportFolder').value = d.folder;
+      setExportStatus(`${d.written.length} file${d.written.length === 1 ? '' : 's'} written to ${d.folder}`, 'status ok');
+      $('openFolderBtn').classList.remove('hidden');
+      toast(`${d.written.length} crop${d.written.length === 1 ? '' : 's'} exported`, 'done');
+      return true;
+    } catch (e) { setExportStatus(e.message, 'status err'); return false; }
+    finally { exportBusy(false); }
+  }
+  $('exportGo').addEventListener('click', writeFiles);
+  // Browse… → Windows folder window (server is PC par kholta hai) → chunte hi files likh di jaati hain
+  $('browseBtn').addEventListener('click', async () => {
+    exportBusy(true); $('openFolderBtn').classList.add('hidden');
+    setExportStatus('Choose a folder in the window that just opened…');
+    try {
+      const res = await fetch('/api/pick-folder', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ start: $('exportFolder').value.trim(), title: 'Choose the folder for the crops' }) });
+      const d = await res.json(); if (!d.ok) throw new Error(d.error || 'Could not open the folder window');
+      if (d.cancelled) { setExportStatus('Cancelled — nothing was written.'); return; }
+      $('exportFolder').value = d.folder;
+      exportBusy(false);
+      await writeFiles();
+    } catch (e) { setExportStatus(e.message + ' You can also type the folder path and press "Write files".', 'status err'); }
+    finally { exportBusy(false); }
+  });
+  $('openFolderBtn').addEventListener('click', async () => {
+    try {
+      const res = await fetch('/api/open-folder', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ folder: $('exportFolder').value.trim() }) });
+      const d = await res.json(); if (!d.ok) throw new Error(d.error || 'Could not open the folder');
+    } catch (e) { toast(e.message, 'err'); }
+  });
+
+  const prefersReduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  openImage(0);
+})();
+</script>
+
+<%- include('partials/foot') %>

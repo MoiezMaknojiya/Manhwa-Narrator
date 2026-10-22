@@ -3,15 +3,26 @@ const express = require('express');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
+const { execFile, spawn } = require('child_process');
 const multer = require('multer');
 const store = require('./lib/store');
 const { generateNarration, listModels } = require('./lib/gemini');
 const { recordTokenUsage, getTokenStats } = require('./lib/store');
 const jobs = require('./lib/jobs');
-const { parseSections } = require('./lib/sections');
-const { synthesizeChapter, TTS_VOICES } = require('./lib/tts');
-const { renderChapterVideo, PRESETS } = require('./lib/video');
-const { buildListing, writeManifest } = require('./lib/publish');
+const { parseSections, mergeLeadIns } = require('./lib/sections');
+const { splitGeminiOutput } = require('./lib/extract');
+const N = require('./lib/names');
+const { synthesizeImages, pruneClips, readClip, clipHash, clipName, clipPaths } = require('./lib/tts');
+const { zipStore } = require('./lib/zip');
+// Voice catalog with gender/pitch/description — GET /v1beta/voices se nikala (lib/voices.json)
+let VOICE_CATALOG;
+try {
+  VOICE_CATALOG = require('./lib/voices.json').voices;
+} catch {
+  VOICE_CATALOG = [];
+}
+const voiceLabel = (v) => (VOICE_CATALOG.find((x) => x.voice === v) || {}).name || v;
+const { buildListing } = require('./lib/publish');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -88,7 +99,11 @@ app.post('/projects/:pid/info', (req, res) => {
 app.get('/projects/:pid', (req, res) => {
   const project = store.getProject(req.params.pid);
   if (!project) return res.status(404).send('Project not found');
-  res.render('project', { project });
+  res.render('project', {
+    project,
+    otherProjects: store.listProjects().filter((p) => p.id !== project.id), // roster copy ke liye (sequel/season 2)
+    rosterMsg: req.query.msg || '',
+  });
 });
 
 app.post('/projects/:pid/chapters', (req, res) => {
@@ -116,6 +131,7 @@ app.get('/projects/:pid/chapters/:cid', (req, res) => {
     project,
     chapter,
     hasKey: settings.keys.length > 0,
+    showVoices: settings.showVoicesCard === 'on', // Image Voices card — Settings mein PIN-protected switch
     model: settings.model,
     tokenStats,
     quota: store.getQuotaSummary(),
@@ -161,27 +177,69 @@ app.post('/projects/:pid/chapters/:cid/images/clear', (req, res) => {
 const CHAR_MARKER = '===CHARACTERS===';
 const SOURCE_MARKER = '===SOURCE===';
 
-function buildRosterBlock(characters) {
-  if (!characters.length) return '';
-  const lines = characters.map((c) => {
+/** Chapter title → project mein uska number (1-based). Roster ko chapter ke hisaab se scope karne ke liye. */
+function chapterOrderMap(project) {
+  const m = {};
+  (project.chapters || []).forEach((c, i) => { m[c.title] = i + 1; });
+  return m;
+}
+
+/** Series ka context + naming convention (manhwa/manhua/manga) + ye kaunsa chapter hai */
+function buildProjectBlock(project, chapter, index, total) {
+  const type = (project.type || 'manhwa').toLowerCase();
+  const conv = type === 'manhua'
+    ? 'Manhua (Chinese): names are pinyin, family name first (e.g. "Xiao Yan" = family Xiao, given Yan). Keep the roster spelling and syllable split ("Xiaoyan" and "Xiao Yan" are the same person). Diminutives and forms of address ("Yan\'er", "Brother Yan", "Young Master Xiao") refer to the roster character — use the roster name.'
+    : type === 'manga'
+      ? 'Manga (Japanese): translations swap family/given name order — the roster order is the correct one. Honorifics (-san, -kun, -sama, -senpai, -chan) are not part of the name.'
+      : 'Manhwa (Korean): family name first (e.g. "Namgung Yeongryeong" = family Namgung, given Yeongryeong). Translations vary romanization (Hyeon/Hyun, Sin/Shin, Ji-hyeok/Jihyuk) — ALWAYS use the roster spelling. Honorifics (-nim, -ssi, hyung, nuna) and titles (Young Master, Elder, Lord) are not part of the name.';
+  return `\n\nSERIES CONTEXT: "${project.name}"${project.author ? ` by ${project.author}` : ''}. You are writing CHAPTER "${chapter.title}" (chapter ${index} of ${total} in this project). NAMING CONVENTION — ${conv}`;
+}
+
+/**
+ * Roster block — chapter-scoped: baad ke chapters mein pehli baar aaye characters, aur "Chapter N:" tagged rishte/kapde jo is chapter
+ * ke baad reveal hue, is prompt mein NAHI jaate (purana chapter regenerate karo toh spoiler nahi). pending (unnamed/guess) rows bhi nahi.
+ */
+function buildRosterBlock(characters, { chapterOrder = Infinity, orderOf = () => null } = {}) {
+  const roster = characters.filter((c) => !c.pending);
+  const RULES =
+    '\n\nCHARACTER ROSTER — use EXACTLY these names in the script (the bullet spelling is the correct one, even if this chapter\'s translation or a relationships note spells it differently).\n' +
+    'HOW TO RECOGNISE: by PERMANENT features (face, hair colour/style, eye colour, scars, build, approximate age) PLUS story context (who they are with, how others address them, their relationships). Clothes, armour, weapons and accessories CHANGE between chapters — a known character in a new outfit is the SAME character; never invent a new name for them. Time skips, flashbacks (younger / greyscale), chibi or comedy panels, night or rain scenes: colours and apparent age are unreliable there — rely on context.\n' +
+    'THE OPPOSITE MISTAKE IS WORSE: never give a roster name to someone who merely resembles one (same clan robes or uniform, same hairstyle, a relative, a twin, a masked or hooded figure). Use a roster name only when face AND context clearly match. If unsure, DESCRIBE the person ("Sin family ka ek guard", "naqaab-posh aadmi") and do not put them in the JSON as that character. Characters marked [DEAD] appear only in flashbacks/memories or when others talk about them. "not yet shown clearly" characters are never recognised by looks.\n' +
+    'REVEAL TIMING: if a face is hidden, or the story has not yet named the person in THIS chapter\'s panels, do not use the roster name before the reveal — describe them, then switch to the name in the image where the story reveals it. Never reveal relationships, deaths or identities that belong to later chapters (spoilers).\n' +
+    'If a roster character receives a new name or title in the story (adoption, fake identity, promotion), keep using the ROSTER name and mention the new one once in narration — never create a second character.\n' +
+    'USE the relationships naturally ("[naam] ki ammi", "uska beta"). First mention of a character in an image-section = full roster name; afterwards a short form (given name) is fine, spelling always the roster\'s.\n';
+  if (!roster.length) {
+    return RULES + '(The roster is still empty — this is the first chapter. Use each name exactly as this chapter\'s text spells it and keep it consistent throughout. People who are never named: describe them, do not invent names.)';
+  }
+  const lines = roster.map((c) => {
+    const firstSeen = c.first_seen ? orderOf(c.first_seen) : null;
+    if (firstSeen !== null && firstSeen !== undefined && firstSeen > chapterOrder) return null; // baad ke chapter ka character
     let line = `- ${c.name}`;
     if (c.aliases) line += ` (also known as: ${c.aliases})`;
     if (c.role) line += ` [${c.role}]`;
-    if (c.look) line += ` — appearance: ${c.look}`;
-    if (c.relationships) line += ` — relationships: ${c.relationships}`;
+    if (c.status && c.status !== 'alive') line += ` [${String(c.status).toUpperCase()}]`;
+    if (c.look) line += ` — permanent appearance: ${c.look}`;
+    else line += ' — appearance: not yet shown clearly (recognise only by name/context, never by looks)';
+    if (c.notes) line += ` — how to tell apart: ${c.notes}`;
+    const outfits = N.clausesUpTo(c.outfits, chapterOrder, orderOf);
+    if (outfits) line += ` — clothes seen so far (NOT a recognition cue, they change): ${outfits}`;
+    const rel = N.clausesUpTo(c.relationships, chapterOrder, orderOf);
+    if (rel) line += ` — relationships (revealed up to this chapter): ${rel}`;
     return line;
-  });
-  return (
-    '\n\nCHARACTER ROSTER (always use EXACTLY these names in the script, even if this chapter\'s translation spells them differently — identify each character by their appearance. USE the relationships naturally in the narration, e.g. "Hyeon ki ammi", "uska beta"):\n' +
-    lines.join('\n')
-  );
+  }).filter(Boolean);
+  return RULES + lines.join('\n');
 }
 
 const EXTRACT_INSTRUCTION =
-  `\n\nAPP INSTRUCTION (not part of the script): After the script is fully finished, write "${CHAR_MARKER}" alone on a new line, followed by a JSON array (in ENGLISH, no extra text) of the important characters seen in this chapter:\n` +
-  `[{"name": "...", "look": "short visual description in English — hair, clothes, distinctive features", "role": "hero/villain/side", "relationships": "family/social ties revealed so far, e.g. Ha Hyeon's mother; wife of Sin Ji-hyeok"}]\n` +
-  `For characters already in the roster, use the roster name. Add a new entry for any new character. If this chapter reveals a NEW relationship for an existing character, include that character with the updated relationships.\n` +
+  `\n\nAPP INSTRUCTION (not part of the script): After the script is fully finished, write "${CHAR_MARKER}" alone on a new line, followed by a JSON array (ENGLISH only, no extra text) with EVERY person who is NAMED or speaks in the STORY panels of this chapter — minor named characters too, so their spelling is fixed for later chapters. EXCLUDE cover/title art, character cards, next-chapter previews, recap pages, credits / translator / scanlation pages, TL notes, mascots and advertisements: take no names or looks from those pages.\n` +
+  `Each entry: {"name": "the exact ROSTER name if this is a roster character (even in a new outfit, older, or called by a nickname/title); otherwise the name exactly as this chapter spells it; for an UNNAMED person a short English descriptor like 'masked assassin' — never a kinship word alone ('mother'), never an invented name", "unnamed": true or false, "confidence": "sure" or "guess" (guess = face hidden or identity only inferred), "seen": "shown" or "mentioned" (mentioned = only talked about, not on panel), "sameAs": "roster name ONLY when a roster character is now called by a different name in the story (adoption, fake identity, new title), else empty", "titles": "epithets, titles or nicknames used for this person in this chapter, comma-separated (e.g. Sword Saint), else empty", "look": "PERMANENT features only — face, hair colour and style, eye colour, scars or marks, build, approximate age. NO clothes, jewellery, weapons, expressions, moods, blood, mud or tears", "outfit": "clothes, armour, accessories and weapon in THIS chapter (short)", "role": "hero / villain / side", "status": "alive or dead — only if this chapter shows it, else empty", "relationships": "ties revealed in THIS chapter, using FULL roster names only and no pronouns, e.g. mother of <full name>; wife of <full name>"}\n` +
   `Then write "${SOURCE_MARKER}" alone on a new line, followed by one JSON object (ENGLISH): {"watermarks": ["every website name, URL, logo banner or scanlation-group credit visible anywhere in the images, e.g. example.net"], "notes": "one short line about the source if relevant, else empty"}. Use an empty array if no such text is visible.`;
+
+const GEMINI_REMINDER =
+  '\n\nREMINDER (you have now seen every image): use EXACTLY the roster names from the top; never put a roster name on a hidden or uncertain face; cover every image with its own --- [IMAGE n] --- marker; then append the ===CHARACTERS=== and ===SOURCE=== blocks.';
+
+const SCRIPT_TEMPERATURE = 0.6; // kam temperature + fixed seed = har regenerate par naam/spelling zyada stable
+const seedFor = (s) => parseInt(crypto.createHash('sha1').update(s).digest('hex').slice(0, 8), 16) % 2147483647;
 
 // Commentary addon — policy layer (Settings → Script → commentary mode)
 function getCommentaryAddon() {
@@ -192,112 +250,193 @@ function getCommentaryAddon() {
   }
 }
 
-function parseJsonLoose(text, open, close) {
-  const start = text.indexOf(open);
-  const end = text.lastIndexOf(close);
-  if (start === -1 || end <= start) return null;
-  try { return JSON.parse(text.slice(start, end + 1)); } catch { return null; }
+/** Script ka naam-audit (roster vs script) — flags.nameAudit ki shakal mein */
+function nameAuditFor(pid, narration, detected = []) {
+  const roster = store.listCharacters(pid).filter((c) => !c.pending);
+  const a = N.auditNames(narration, roster, detected);
+  return { unknown: a.unknown.slice(0, 12), nearMatches: a.nearMatches.slice(0, 12), jsonOnly: a.jsonOnly.slice(0, 12) };
 }
 
-function splitNarrationAndCharacters(text) {
-  const idx = text.indexOf(CHAR_MARKER);
-  if (idx === -1) return { narration: text.trim(), detected: [], source: null };
-  const narration = text.slice(0, idx).trim();
-  let tail = text.slice(idx + CHAR_MARKER.length);
-  let sourcePart = '';
-  const sIdx = tail.indexOf(SOURCE_MARKER);
-  if (sIdx !== -1) { sourcePart = tail.slice(sIdx + SOURCE_MARKER.length); tail = tail.slice(0, sIdx); }
-  const clean = (s) => s.trim().replace(/^```(?:json)?/i, '').replace(/```$/, '').trim();
-  const detected = parseJsonLoose(clean(tail), '[', ']') || [];
-  const source = sourcePart ? parseJsonLoose(clean(sourcePart), '{', '}') : null;
-  return { narration, detected: Array.isArray(detected) ? detected : [], source };
-}
-
-// Generate narration (AJAX)
+// Generate narration (AJAX). Ek chapter par ek waqt mein ek hi generation; ek project ke chapters BAARI BAARI chalte hain
+// (chapter 8 ka prompt chapter 7 ke roster merge ke BAAD banta hai).
+const generating = new Set();
+const projectQueue = new Map();
 app.post('/projects/:pid/chapters/:cid/generate', async (req, res) => {
   const { pid, cid } = req.params;
-  const chapter = store.getChapter(pid, cid);
-  if (!chapter) return res.status(404).json({ ok: false, error: 'Chapter not found' });
-  if (!chapter.images.length)
-    return res.status(400).json({ ok: false, error: 'Upload images first.' });
-
+  const chapter0 = store.getChapter(pid, cid);
+  if (!chapter0) return res.status(404).json({ ok: false, error: 'Chapter not found' });
+  if (!chapter0.images.length) return res.status(400).json({ ok: false, error: 'Upload images first.' });
+  if (generating.has(cid)) return res.status(409).json({ ok: false, error: 'Script generation is already running for this chapter — wait for it to finish.' });
   const settings = store.getSettings();
+  if (!settings.keys.length) return res.status(400).json({ ok: false, error: 'No Google AI API key set — add keys in Settings.' });
+  generating.add(cid);
   store.updateChapter(pid, cid, { status: 'generating', error: '' });
-  try {
+
+  const run = async () => {
+    const chapter = store.getChapter(pid, cid); // fresh — intezaar ke dauran roster/notes badle ho sakte hain
+    const project = store.getProject(pid);
+    const orderMap = chapterOrderMap(project);
+    const chapterIndex = orderMap[chapter.title] || (project.chapters.findIndex((c) => c.id === cid) + 1) || 1;
+    const orderOf = (title) => (orderMap[title] !== undefined ? orderMap[title] : null);
     const roster = store.listCharacters(pid);
     const addon = settings.commentaryMode === 'on' ? getCommentaryAddon() : '';
-    const finalPrompt = settings.prompt + addon + buildRosterBlock(roster) + EXTRACT_INSTRUCTION;
-    const imagePaths = chapter.images.map((img) => ({
-      path: path.join(UPLOADS_DIR, pid, cid, img.file),
-      original: img.original,
-    }));
+    const notesBlock = (chapter.notes || '').trim()
+      ? `\n\nEDITOR NOTES FOR THIS CHAPTER ONLY (apply here, not a permanent rule): ${chapter.notes.trim().slice(0, 1500)}`
+      : '';
+    const finalPrompt = settings.prompt + addon + buildProjectBlock(project, chapter, chapterIndex, project.chapters.length) +
+      buildRosterBlock(roster, { chapterOrder: chapterIndex, orderOf }) + notesBlock + EXTRACT_INSTRUCTION;
+    const imagePaths = chapter.images.map((img) => path.join(UPLOADS_DIR, pid, cid, img.file)); // file ke naam model ko nahi jaate
     const result = await generateNarration({
       keys: settings.keys,
       activeKeyIndex: settings.activeKeyIndex,
       model: settings.model,
       prompt: finalPrompt,
       imagePaths,
+      reminder: GEMINI_REMINDER,
+      temperature: SCRIPT_TEMPERATURE,
+      seed: seedFor(pid + cid),
       // Har API try quota mein count hoti hai (fail bhi Google ke haan count hoti hai)
       onAttempt: (idx, keyLabel) => store.recordKeyRequest(keyLabel, settings.model),
     });
     // Jo key chali, wahi agli baar pehle try hogi
     store.saveSettings({ activeKeyIndex: String(result.usedKeyIndex) });
     recordTokenUsage(pid, cid, result.tokenUsage, settings.model);
-    const { narration, detected, source } = splitNarrationAndCharacters(result.text);
-    const mergeResult = store.mergeDetectedCharacters(pid, detected);
-    const flags = { ...(chapter.flags || {}) };
-    if (source && Array.isArray(source.watermarks)) {
-      flags.watermarks = source.watermarks.map((w) => String(w).trim().slice(0, 60)).filter(Boolean).slice(0, 8);
-      if (source.notes) flags.sourceNotes = String(source.notes).slice(0, 200);
+
+    const parsed = splitGeminiOutput(result.text);
+    const warnings = [...parsed.warnings];
+    // Naam-audit RAW text par (labels abhi speaker se shuru hote hain): variant spelling → roster spelling, alias seekho
+    const audit = nameAuditFor(pid, parsed.narration, parsed.detected);
+    const fixed = [];
+    for (const nm of audit.nearMatches) {
+      const c = roster.find((x) => x.name === nm.roster);
+      const alias = c ? N.cleanAlias(nm.found, c.name) : '';
+      if (c && alias) store.updateCharacter(pid, c.id, { aliases: [c.aliases, alias].filter(Boolean).join(', ') }, { source: 'ai' });
+      fixed.push(`"${nm.found}" ×${nm.count} → ${nm.roster}`);
     }
-    store.updateChapter(pid, cid, { narration, status: 'done', error: '', flags });
-    res.json({
+    let narration = parsed.narration;
+    if (audit.nearMatches.length) narration = N.canonicalizeNamesInText(narration, roster.filter((c) => !c.pending));
+    narration = mergeLeadIns(narration).trim(); // 'X kehti hai:' + '"X kehti hai": baat' → ek hi attribution
+
+    const flags = { ...(chapter.flags || {}) };
+    if (parsed.source && Array.isArray(parsed.source.watermarks)) {
+      flags.watermarks = parsed.source.watermarks.map((w) => String(w).trim().slice(0, 60)).filter(Boolean).slice(0, 8);
+      if (parsed.source.notes) flags.sourceNotes = String(parsed.source.notes).slice(0, 200);
+    }
+    flags.parseWarnings = parsed.warnings;
+    flags.nameAudit = { unknown: audit.unknown, fixed, jsonOnly: audit.jsonOnly };
+    // PEHLE script save (Gemini ka output kabhi zaya na ho), PHIR roster merge
+    store.updateChapter(pid, cid, {
+      narration, status: 'done', error: '', flags,
+      prevNarration: chapter.narration || '',
+      narrationImages: chapter.images.map((i) => i.file),
+    });
+    let mergeResult;
+    try {
+      mergeResult = store.mergeDetectedCharacters(pid, parsed.detected, { id: cid, title: chapter.title });
+    } catch (err) {
+      console.error('  ❌ roster merge failed (script is saved):', err.message);
+      mergeResult = { added: 0, updated: 0, pending: [], ambiguous: [], conflicts: [], skipped: [], learned: [], error: err.message };
+      warnings.push('Roster update failed: ' + err.message);
+    }
+    flags.roster = { pending: mergeResult.pending, ambiguous: mergeResult.ambiguous, conflicts: mergeResult.conflicts, skipped: mergeResult.skipped, learned: mergeResult.learned };
+    store.updateChapter(pid, cid, { flags });
+    return {
       ok: true,
       narration,
       characters: mergeResult,
       flags,
+      warnings,
       tokenUsage: result.tokenUsage,
-      keyInfo: {
-        usedKeyIndex: result.usedKeyIndex,
-        usedKeyLabel: result.usedKeyLabel,
-        rotated: result.rotated,
-        failures: result.failures,
-      },
+      keyInfo: { usedKeyIndex: result.usedKeyIndex, usedKeyLabel: result.usedKeyLabel, rotated: result.rotated, failures: result.failures },
       quota: store.getQuotaSummary(),
       media: mediaStatus(pid, cid),
-    });
+    };
+  };
+
+  const prev = projectQueue.get(pid) || Promise.resolve();
+  const job = prev.then(run, run);
+  projectQueue.set(pid, job.catch(() => {}));
+  try {
+    res.json(await job);
   } catch (err) {
     const message = err && err.message ? err.message : 'Kuch ghalat ho gaya.';
     store.updateChapter(pid, cid, { status: 'error', error: message });
     res.status(500).json({ ok: false, error: message, quota: store.getQuotaSummary() });
+  } finally {
+    generating.delete(cid);
   }
 });
 
 // ---------- Characters CRUD ----------
+const backToRoster = (res, pid, msg) => res.redirect('/projects/' + pid + (msg ? '?msg=' + encodeURIComponent(msg) : '') + '#characters');
+
 app.post('/projects/:pid/characters', (req, res) => {
-  store.addCharacter(req.params.pid, req.body);
-  res.redirect('/projects/' + req.params.pid + '#characters');
+  const c = store.addCharacter(req.params.pid, req.body, { manual: true });
+  backToRoster(res, req.params.pid, c ? '' : 'Name is required.');
 });
 
 app.post('/projects/:pid/characters/:chid/update', (req, res) => {
-  store.updateCharacter(req.params.pid, req.params.chid, req.body);
-  res.redirect('/projects/' + req.params.pid + '#characters');
+  const out = store.updateCharacter(req.params.pid, req.params.chid, req.body, { manual: true });
+  backToRoster(res, req.params.pid, out ? '' : 'Name cannot be empty.');
 });
 
+// Delete + remember: agla Generate is naam ko dobara add nahi karega (manual add se tombstone hat jaata hai)
 app.post('/projects/:pid/characters/:chid/delete', (req, res) => {
-  store.deleteCharacter(req.params.pid, req.params.chid);
-  res.redirect('/projects/' + req.params.pid + '#characters');
+  store.deleteCharacter(req.params.pid, req.params.chid, { forget: req.body.forget !== '0' });
+  backToRoster(res, req.params.pid);
 });
 
-// Save edited narration
+// Do rows ek — duplicate ko asal character mein milao (aliases/rishte/kapde saath)
+app.post('/projects/:pid/characters/:chid/merge-into', (req, res) => {
+  const target = (req.body.target || '').trim();
+  const out = target ? store.mergeCharacters(req.params.pid, target, req.params.chid) : null;
+  backToRoster(res, req.params.pid, out ? `Merged into ${out.name}.` : 'Pick a character to merge into.');
+});
+
+// Sequel / season 2: doosre project ka roster copy
+app.post('/projects/:pid/characters/copy-from', (req, res) => {
+  const src = (req.body.sourcePid || '').trim();
+  const n = src && src !== req.params.pid ? store.copyCharacters(src, req.params.pid) : 0;
+  backToRoster(res, req.params.pid, `Copied ${n} character${n === 1 ? '' : 's'}.`);
+});
+
+// Pending suggestion (unnamed/guess) ko roster mein alias ke taur par jodna
+app.post('/projects/:pid/characters/:chid/alias', (req, res) => {
+  const c = store.getCharacter(req.params.pid, req.params.chid);
+  const alias = (req.body.alias || '').trim();
+  if (c && alias) store.updateCharacter(req.params.pid, c.id, { aliases: [c.aliases, alias].filter(Boolean).join(', ') }, { manual: true });
+  res.json({ ok: !!(c && alias) });
+});
+
+// Save edited narration (+ naam audit dobara)
 app.post('/projects/:pid/chapters/:cid/narration', (req, res) => {
+  const { pid, cid } = req.params;
+  const chapter = store.getChapter(pid, cid);
+  if (!chapter) return res.status(404).json({ ok: false, error: 'Chapter not found' });
+  const narration = req.body.narration || '';
+  const flags = { ...(chapter.flags || {}) };
+  if (narration.trim()) flags.nameAudit = { ...nameAuditFor(pid, narration), fixed: [] };
+  store.updateChapter(pid, cid, { narration, status: narration.trim() ? 'done' : chapter.status, flags });
+  res.json({ ok: true, media: mediaStatus(pid, cid) });
+});
+
+// Regenerate se pehle wali script wapas
+app.post('/projects/:pid/chapters/:cid/narration/restore', (req, res) => {
+  const { pid, cid } = req.params;
+  const chapter = store.getChapter(pid, cid);
+  if (!chapter) return res.status(404).json({ ok: false, error: 'Chapter not found' });
+  if (!(chapter.prevNarration || '').trim()) return res.status(400).json({ ok: false, error: 'No previous script saved for this chapter.' });
+  const flags = { ...(chapter.flags || {}), nameAudit: { ...nameAuditFor(pid, chapter.prevNarration), fixed: [] } };
+  store.updateChapter(pid, cid, { narration: chapter.prevNarration, prevNarration: chapter.narration, status: 'done', flags });
+  res.json({ ok: true, narration: chapter.prevNarration, media: mediaStatus(pid, cid) });
+});
+
+// Sirf is chapter ke liye hidayaat (prompt mein "EDITOR NOTES FOR THIS CHAPTER ONLY")
+app.post('/projects/:pid/chapters/:cid/notes', (req, res) => {
   const chapter = store.getChapter(req.params.pid, req.params.cid);
   if (!chapter) return res.status(404).json({ ok: false, error: 'Chapter not found' });
-  store.updateChapter(req.params.pid, req.params.cid, {
-    narration: req.body.narration || '',
-    status: (req.body.narration || '').trim() ? 'done' : chapter.status,
-  });
-  res.json({ ok: true, media: mediaStatus(req.params.pid, req.params.cid) });
+  store.updateChapter(req.params.pid, req.params.cid, { notes: String(req.body.notes || '').slice(0, 1500) });
+  res.json({ ok: true });
 });
 
 // Download narration as .txt
@@ -312,84 +451,263 @@ app.get('/projects/:pid/chapters/:cid/narration.txt', (req, res) => {
 });
 
 // ======================================================================
-//  Voiceover (TTS) + Video assembly
+//  Crop panels — webtoon strip se chhote crops (CapCut ke liye), copyright budget ke saath
 // ======================================================================
-const sha = (s) => crypto.createHash('sha1').update(s).digest('hex').slice(0, 16);
-const mediaDir = (pid, cid) => path.join(OUTPUT_DIR, pid, cid);
-const audioSig = (settings) => [settings.ttsModel, settings.ttsVoice, settings.ttsStyle, settings.ttsMaxChars].join('|');
-const audioHashFor = (chapter, settings) => sha((chapter.narration || '') + '\u0001' + audioSig(settings));
-const videoSig = (settings) =>
-  [settings.videoPreset, settings.coveragePercent, settings.channelName, settings.trimFirstTop, settings.trimLastBottom,
-   settings.holdSec, settings.videoFps, settings.videoQuality].join('|');
-const videoHashFor = (audioHash, settings, project) =>
-  sha(audioHash + '\u0001' + videoSig(settings) + '\u0001' + [project.name, project.platform, project.official_url, project.author].join('|'));
+const crops = require('./lib/crops');
+const safeName = (s) => String(s || '').replace(/[^a-zA-Z0-9 _-]/g, '').trim() || 'chapter';
+const cropsState = (chapter) => {
+  const c = (chapter.flags && chapter.flags.crops) || {};
+  return { budgetPercent: Math.min(100, Math.max(10, parseInt(c.budgetPercent, 10) || 40)), byFile: c.byFile || {}, folder: c.folder || '' };
+};
+const defaultCropFolder = (project, chapter) =>
+  path.join(require('os').homedir(), 'Desktop', 'CR', 'StoryArcRewind', safeName(project.name), safeName(chapter.title), 'images-cropped');
 
-function readJsonSafe(file) {
-  try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return null; }
+async function chapterImagesWithMeta(pid, cid, chapter) {
+  const out = [];
+  for (let i = 0; i < chapter.images.length; i++) {
+    const img = chapter.images[i];
+    const file = path.join(UPLOADS_DIR, pid, cid, img.file);
+    if (!fs.existsSync(file)) continue;
+    const m = await crops.imageMeta(file);
+    out.push({ index: i + 1, file: img.file, original: img.original, width: m.width, height: m.height, url: `/uploads/${pid}/${cid}/${img.file}`, path: file });
+  }
+  return out;
 }
 
-/** Chapter ki media state — UI isi ko poll karti hai. */
+app.get('/projects/:pid/chapters/:cid/crops', async (req, res) => {
+  const { pid, cid } = req.params;
+  const project = store.getProject(pid);
+  const chapter = store.getChapter(pid, cid);
+  if (!project || !chapter) return res.status(404).send('Chapter not found');
+  const images = await chapterImagesWithMeta(pid, cid, chapter);
+  const state = cropsState(chapter);
+  res.render('crops', {
+    project, chapter,
+    images: images.map((im) => ({ ...im, path: undefined, crops: crops.normaliseCrops(state.byFile[im.file], im) })),
+    budgetPercent: state.budgetPercent,
+    folder: state.folder || defaultCropFolder(project, chapter),
+  });
+});
+
+// Panel suggestions (gutter detection)
+app.get('/projects/:pid/chapters/:cid/crops/panels', async (req, res) => {
+  const { pid, cid } = req.params;
+  const chapter = store.getChapter(pid, cid);
+  const img = chapter && chapter.images.find((i) => i.file === req.query.file);
+  if (!img) return res.status(404).json({ ok: false, error: 'Image not found' });
+  try {
+    const panels = await crops.detectPanels(path.join(UPLOADS_DIR, pid, cid, img.file));
+    res.json({ ok: true, panels });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// Save crops (autosave) — body { byFile: { file: [{x,y,w,h}] }, budgetPercent, folder }
+app.post('/projects/:pid/chapters/:cid/crops', async (req, res) => {
+  const { pid, cid } = req.params;
+  const chapter = store.getChapter(pid, cid);
+  if (!chapter) return res.status(404).json({ ok: false, error: 'Chapter not found' });
+  const b = req.body || {};
+  const prev = cropsState(chapter);
+  const byFile = {};
+  const valid = new Set(chapter.images.map((i) => i.file));
+  for (const [file, list] of Object.entries(b.byFile || {})) {
+    if (!valid.has(file) || !Array.isArray(list)) continue;
+    const m = await crops.imageMeta(path.join(UPLOADS_DIR, pid, cid, file)).catch(() => null);
+    if (!m) continue;
+    const norm = crops.normaliseCrops(list, m);
+    if (norm.length) byFile[file] = norm;
+  }
+  const next = {
+    budgetPercent: Math.min(100, Math.max(10, parseInt(b.budgetPercent, 10) || prev.budgetPercent)),
+    byFile: b.byFile ? byFile : prev.byFile,
+    folder: b.folder !== undefined ? String(b.folder).slice(0, 400) : prev.folder,
+  };
+  store.updateChapter(pid, cid, { flags: { ...(chapter.flags || {}), crops: next } });
+  res.json({ ok: true, total: Object.values(next.byFile).reduce((a, l) => a + l.length, 0) });
+});
+
+/** Saved crops of this chapter as [{ name, file, index, k, rect, path }] (y-order, selected images only) */
+function listSavedCrops(pid, cid, chapter, onlyIndexes) {
+  const state = cropsState(chapter);
+  const out = [];
+  chapter.images.forEach((img, i) => {
+    const index = i + 1;
+    if (onlyIndexes && !onlyIndexes.has(index)) return;
+    const list = (state.byFile[img.file] || []).slice().sort((a, b) => a.y - b.y);
+    list.forEach((rect, k) => out.push({ name: crops.cropName(index, k), file: img.file, index, k, rect, path: path.join(UPLOADS_DIR, pid, cid, img.file) }));
+  });
+  return out;
+}
+const parseIndexes = (q) => (q ? new Set(String(q).split(',').map((n) => parseInt(n, 10)).filter(Number.isInteger)) : null);
+
+// One crop as JPEG — preview ya download (?download=1)
+app.get('/projects/:pid/chapters/:cid/crops/one/:index/:k.jpg', async (req, res) => {
+  const { pid, cid } = req.params;
+  const chapter = store.getChapter(pid, cid);
+  if (!chapter) return res.status(404).send('Not found');
+  const index = parseInt(req.params.index, 10), k = parseInt(req.params.k, 10);
+  const item = listSavedCrops(pid, cid, chapter).find((c) => c.index === index && c.k === k);
+  if (!item) return res.status(404).send('Crop not saved yet');
+  try {
+    const buf = await crops.renderCrop(item.path, item.rect);
+    res.setHeader('Content-Type', 'image/jpeg');
+    if (req.query.download) res.setHeader('Content-Disposition', `attachment; filename="${item.name}.jpg"`);
+    res.send(buf);
+  } catch (err) { res.status(500).send(err.message); }
+});
+
+// All crops (selected images) as ZIP → 01a.jpg, 01b.jpg, 02a.jpg …
+app.get('/projects/:pid/chapters/:cid/crops/download.zip', async (req, res) => {
+  const { pid, cid } = req.params;
+  const project = store.getProject(pid);
+  const chapter = store.getChapter(pid, cid);
+  if (!project || !chapter) return res.status(404).send('Not found');
+  const items = listSavedCrops(pid, cid, chapter, parseIndexes(req.query.images));
+  if (!items.length) return res.status(404).send('No crops saved for the selected images');
+  const entries = [];
+  for (const it of items) entries.push({ name: `${it.name}.jpg`, data: await crops.renderCrop(it.path, it.rect) });
+  res.setHeader('Content-Type', 'application/zip');
+  res.setHeader('Content-Disposition', `attachment; filename="${safeName(project.name)} - ${safeName(chapter.title)} - crops.zip"`);
+  res.send(zipStore(entries));
+});
+
+// Write crops straight into a folder on this PC (CapCut import ke liye) — body { folder, images: "1,2,3" }
+app.post('/projects/:pid/chapters/:cid/crops/export', async (req, res) => {
+  const { pid, cid } = req.params;
+  const project = store.getProject(pid);
+  const chapter = store.getChapter(pid, cid);
+  if (!project || !chapter) return res.status(404).json({ ok: false, error: 'Chapter not found' });
+  const folder = String((req.body && req.body.folder) || '').trim() || defaultCropFolder(project, chapter);
+  if (!path.isAbsolute(folder)) return res.status(400).json({ ok: false, error: 'Give a full folder path (e.g. C:\\Users\\you\\Desktop\\crops).' });
+  const items = listSavedCrops(pid, cid, chapter, parseIndexes(req.body && req.body.images));
+  if (!items.length) return res.status(400).json({ ok: false, error: 'No crops saved for the selected images.' });
+  try {
+    fs.mkdirSync(folder, { recursive: true });
+    const written = [];
+    for (const it of items) { fs.writeFileSync(path.join(folder, `${it.name}.jpg`), await crops.renderCrop(it.path, it.rect)); written.push(`${it.name}.jpg`); }
+    store.updateChapter(pid, cid, { flags: { ...(chapter.flags || {}), crops: { ...cropsState(chapter), folder } } });
+    res.json({ ok: true, folder, written });
+  } catch (err) { res.status(500).json({ ok: false, error: err.message }); }
+});
+
+// ======================================================================
+//  Local PC helpers — folder picker (native Windows dialog) + open folder in Explorer
+// ======================================================================
+let folderPickerBusy = false;
+// Body { start, title } → { ok, folder } | { ok, cancelled } — dialog is PC par khulta hai jahan server chal raha hai
+app.post('/api/pick-folder', (req, res) => {
+  if (process.platform !== 'win32') return res.status(501).json({ ok: false, error: 'The folder window only works on Windows — type the folder path instead.' });
+  if (folderPickerBusy) return res.status(409).json({ ok: false, error: 'A folder window is already open — finish that one first.' });
+  folderPickerBusy = true;
+  const start = String((req.body && req.body.start) || '').trim().slice(0, 500);
+  const title = String((req.body && req.body.title) || 'Choose a folder').replace(/[\r\n"]/g, ' ').slice(0, 120);
+  const script = path.join(__dirname, 'lib', 'pick-folder.ps1');
+  const args = ['-NoProfile', '-NonInteractive', '-Sta', '-ExecutionPolicy', 'Bypass', '-File', script, '-Start', start, '-Title', title];
+  execFile('powershell.exe', args, { timeout: 10 * 60 * 1000, windowsHide: true, maxBuffer: 1 << 20 }, (err, stdout, stderr) => {
+    folderPickerBusy = false;
+    if (err && err.killed) return res.status(408).json({ ok: false, error: 'The folder window timed out.' });
+    if (err) return res.status(500).json({ ok: false, error: 'Could not open the folder window: ' + String(stderr || err.message).trim().slice(0, 300) });
+    const folder = String(stdout || '').trim();
+    if (!folder) return res.json({ ok: true, cancelled: true });
+    res.json({ ok: true, folder });
+  });
+});
+
+// Body { folder } → Explorer/Finder mein kholo (sirf existing folder)
+app.post('/api/open-folder', (req, res) => {
+  const folder = String((req.body && req.body.folder) || '').trim();
+  let ok = false;
+  try { ok = !!folder && path.isAbsolute(folder) && fs.statSync(folder).isDirectory(); } catch { ok = false; }
+  if (!ok) return res.status(400).json({ ok: false, error: 'Folder not found on this PC.' });
+  const cmd = process.platform === 'win32' ? ['explorer.exe', [folder]] : process.platform === 'darwin' ? ['open', [folder]] : ['xdg-open', [folder]];
+  try { spawn(cmd[0], cmd[1], { detached: true, stdio: 'ignore' }).unref(); } catch (err) { return res.status(500).json({ ok: false, error: err.message }); }
+  res.json({ ok: true });
+});
+
+// ======================================================================
+//  Voiceover (TTS) — har image ki apni alag voice file
+// ======================================================================
+const mediaDir = (pid, cid) => path.join(OUTPUT_DIR, pid, cid);
+// Sections + speak text — roster ke saath (naam ki spelling/pronounce har clip mein ek jaisi)
+const sectionsFor = (pid, chapter) =>
+  parseSections(chapter.narration, chapter.images.length, { roster: store.listCharacters(pid).filter((c) => !c.pending) });
+const ttsOptions = (settings) => ({
+  model: settings.ttsModel, voice: settings.ttsVoice, style: settings.ttsStyle,
+  temperature: settings.ttsTemperature, language: settings.ttsLanguage,
+});
+const VOICE_IDS = new Set(VOICE_CATALOG.map((v) => v.voice));
+// Har image ki apni voice: chapter.flags.clipVoices = { "<first image number>": "<voice id>" } — warna Settings wali default
+const clipVoicesOf = (chapter) => (chapter.flags && chapter.flags.clipVoices) || {};
+const voiceFor = (chapter, section, settings) => {
+  const v = clipVoicesOf(chapter)[String(section.from)];
+  return v && VOICE_IDS.has(v) ? v : settings.ttsVoice;
+};
+const sectionHash = (section, settings, voice) => clipHash({ ...ttsOptions(settings), voice: voice || settings.ttsVoice, text: section.speakText });
+const fileBase = (project, chapter) => `${project.name} - ${chapter.title}`.replace(/[^a-zA-Z0-9 _-]/g, '').trim() || 'chapter';
+
+/** image-03, image-04… — do sections ek hi image par hon (replay) toh image-04-2 taake ZIP mein naam na takrayein. */
+function uniqueClipNames(sections) {
+  const seen = {};
+  return sections.map((s) => {
+    const n = clipName(s);
+    seen[n] = (seen[n] || 0) + 1;
+    return seen[n] > 1 ? `${n}-${seen[n]}` : n;
+  });
+}
+
+/** Chapter ki voice state — UI isi ko poll karti hai. Sab disk se: clip file hai = us image ki voice bani hui hai. */
 function mediaStatus(pid, cid) {
   const project = store.getProject(pid);
   const chapter = store.getChapter(pid, cid);
   if (!project || !chapter) return null;
   const settings = store.getSettings();
-  const media = store.getMedia(cid);
   const dir = mediaDir(pid, cid);
-  const base = `/output/${pid}/${cid}`;
-  const { sections, warnings } = parseSections(chapter.narration, chapter.images.length);
+  const base = `/projects/${pid}/chapters/${cid}`;
+  const { sections, warnings } = sectionsFor(pid, chapter);
   const chars = sections.reduce((a, s) => a + s.chars, 0);
+  // Script likhne ke baad images badli? → [IMAGE n] sections ghalat tasveer par ja sakte hain
+  if (chapter.narrationImages && (chapter.narration || '').trim()) {
+    const now = chapter.images.map((i) => i.file);
+    if (JSON.stringify(now) !== JSON.stringify(chapter.narrationImages))
+      warnings.unshift(`Images were added or removed AFTER this script was written (${chapter.narrationImages.length} → ${now.length}). The [IMAGE n] sections may now sit on the wrong pictures — regenerate the script (or fix the markers) before making voices.`);
+  }
+  const names = uniqueClipNames(sections);
 
-  const audioFile = path.join(dir, 'voiceover.mp3');
-  const audioReady = !!(media && media.audio && fs.existsSync(audioFile));
-  const curAudioHash = audioHashFor(chapter, settings);
-  const audioStale = audioReady && media.audio_hash !== curAudioHash;
-  const audio = audioReady
-    ? {
-        url: `${base}/voiceover.mp3?v=${encodeURIComponent(media.updatedAt)}`,
-        totalSec: media.audio_sec,
-        model: media.tts_model,
-        voice: media.voice,
-        chunks: (media.audio.chunks || []).length,
-        sections: (media.audio.sections || []).length,
-        stale: audioStale,
-        updatedAt: media.updatedAt,
-        warnings: media.audio.warnings || [],
-        requests: media.audio.requests || null,
-      }
-    : null;
+  const overrides = clipVoicesOf(chapter);
+  const clips = sections.map((s, i) => {
+    const voice = voiceFor(chapter, s, settings);
+    const hash = sectionHash(s, settings, voice);
+    const meta = readClip(dir, hash);
+    const thumbs = chapter.images.slice(s.from - 1, s.to).map((img) => `/uploads/${pid}/${cid}/${img.file}`);
+    return {
+      idx: s.idx, name: names[i], from: s.from, to: s.to, chars: s.chars,
+      text: s.speakText.length > 240 ? s.speakText.slice(0, 237) + '…' : s.speakText,
+      thumbs,
+      voice, voiceName: voiceLabel(voice), isDefaultVoice: !overrides[String(s.from)],
+      ready: !!meta,
+      durationSec: meta ? meta.durationSec : 0,
+      warning: meta ? meta.warning || '' : '',
+      url: meta ? `/output/${pid}/${cid}/clips/${hash}.mp3?t=${encodeURIComponent(meta.createdAt || '')}` : '',
+      downloadUrl: `${base}/download/clip/${s.idx}`,
+    };
+  });
+  const ready = clips.filter((c) => c.ready);
 
-  const videoFile = path.join(dir, 'video.mp4');
-  const videoReady = !!(media && media.has_video && fs.existsSync(videoFile));
-  const manifest = videoReady ? readJsonSafe(path.join(dir, 'manifest.json')) : null;
-  const video = videoReady
-    ? {
-        url: `${base}/video.mp4?v=${encodeURIComponent(media.updatedAt)}`,
-        srtUrl: `${base}/captions.srt`,
-        descriptionUrl: `${base}/description.txt`,
-        manifestUrl: `${base}/manifest.json`,
-        durationSec: media.video_sec,
-        stale: audioStale || media.video_hash !== videoHashFor(media.audio_hash, settings, project),
-        preset: manifest && manifest.video ? manifest.video.preset : settings.videoPreset,
-        avgShownPercent: manifest && manifest.video ? manifest.video.avgShownPercent : null,
-        coveragePercent: manifest && manifest.video ? manifest.video.coveragePercent : null,
-      }
-    : null;
-
-  const listing = buildListing({ project, chapter, settings });
   return {
     script: { hasScript: !!(chapter.narration || '').trim(), sections: sections.length, chars, images: chapter.images.length, warnings,
               estMinutes: Math.round((chars / 13) / 60 * 10) / 10 },
-    settings: {
-      ttsModel: settings.ttsModel, ttsVoice: settings.ttsVoice, ttsMaxChars: settings.ttsMaxChars,
-      videoPreset: settings.videoPreset, coveragePercent: settings.coveragePercent, commentaryMode: settings.commentaryMode,
-      channelName: settings.channelName, hasKeys: settings.keys.length > 0,
-      ttsQuota: store.getQuotaSummary().tts,
+    voice: {
+      model: settings.ttsModel, voice: settings.ttsVoice, voiceName: voiceLabel(settings.ttsVoice), style: settings.ttsStyle,
+      temperature: settings.ttsTemperature, language: settings.ttsLanguage,
+      commentaryMode: settings.commentaryMode, hasKeys: settings.keys.length > 0, ttsQuota: store.getQuotaSummary().tts,
     },
-    audio,
-    video,
-    jobs: { voiceover: jobs.publicView(jobs.get(cid, 'voiceover')), video: jobs.publicView(jobs.get(cid, 'video')) },
-    listing,
+    clips,
+    voiceOptions: VOICE_CATALOG.map((v) => ({ voice: v.voice, name: v.name, gender: v.gender || '', kind: v.kind || 'classic', pitch: v.pitch || '' })),
+    summary: { total: clips.length, ready: ready.length, missing: clips.length - ready.length, totalSec: ready.reduce((a, c) => a + c.durationSec, 0) },
+    job: jobs.publicView(jobs.get(cid, 'voiceover')),
+    listing: buildListing({ project, chapter }),
     flags: chapter.flags || {},
     project: { author: project.author || '', platform: project.platform || '', official_url: project.official_url || '' },
   };
@@ -401,7 +719,7 @@ app.get('/projects/:pid/chapters/:cid/media', (req, res) => {
   res.json({ ok: true, ...m });
 });
 
-// Start voiceover job
+// Voice job: body { idx } = sirf us image ki nayi take; khaali body = jin images ki voice nahi bani (ya text/voice badla) wo sab
 app.post('/projects/:pid/chapters/:cid/voiceover', (req, res) => {
   const { pid, cid } = req.params;
   const chapter = store.getChapter(pid, cid);
@@ -409,107 +727,94 @@ app.post('/projects/:pid/chapters/:cid/voiceover', (req, res) => {
   if (!(chapter.narration || '').trim()) return res.status(400).json({ ok: false, error: 'Generate (or paste) the script first.' });
   const settings = store.getSettings();
   if (!settings.keys.length) return res.status(400).json({ ok: false, error: 'No Google AI API key set — add keys in Settings.' });
-  if (jobs.isRunning(cid, 'voiceover') || jobs.isRunning(cid, 'video'))
-    return res.status(409).json({ ok: false, error: 'A job is already running for this chapter.' });
-  const { sections } = parseSections(chapter.narration, chapter.images.length);
+  if (jobs.isRunning(cid, 'voiceover'))
+    return res.status(409).json({ ok: false, error: 'A voice job is already running for this chapter.' });
+  const { sections } = sectionsFor(pid, chapter);
   if (!sections.length) return res.status(400).json({ ok: false, error: 'Script has no narration text.' });
+  const rawIdx = req.body && req.body.idx;
+  const one = rawIdx === undefined || rawIdx === null || rawIdx === '' ? null : parseInt(rawIdx, 10);
+  if (one !== null && !sections.some((s) => s.idx === one))
+    return res.status(400).json({ ok: false, error: 'That image section no longer exists — reload the page.' });
 
   const outDir = mediaDir(pid, cid);
   fs.mkdirSync(outDir, { recursive: true });
-  const hash = audioHashFor(chapter, settings);
   jobs.start(cid, 'voiceover', async (progress) => {
-    const result = await synthesizeChapter({
-      keys: settings.keys,
-      activeKeyIndex: settings.activeKeyIndex,
-      model: settings.ttsModel,
-      voice: settings.ttsVoice,
-      style: settings.ttsStyle,
-      maxChars: settings.ttsMaxChars,
-      sections,
-      outDir,
-      onProgress: progress,
-      onAttempt: (idx, label) => store.recordKeyRequest(label, settings.ttsModel),
-    });
-    store.saveSettings({ activeKeyIndex: String(result.usedKeyIndex) });
-    if (result.requests) recordTokenUsage(pid, cid, result.tokenUsage, settings.ttsModel);
-    store.saveMedia(pid, cid, {
-      audio: {
-        sections: result.sections, chunks: result.chunks, totalSec: result.totalSec,
-        model: settings.ttsModel, voice: settings.ttsVoice, style: settings.ttsStyle,
-        sectionCount: sections.length, createdAt: new Date().toISOString(),
-        warnings: result.warnings || [], requests: result.requests,
-      },
-      audio_hash: hash,
-      audio_sec: result.totalSec,
-      tts_model: settings.ttsModel,
-      voice: settings.ttsVoice,
-    });
-    return { totalSec: result.totalSec, requests: result.requests, chunks: result.chunks.length };
+    const record = (r) => {
+      store.saveSettings({ activeKeyIndex: String(r.usedKeyIndex) });
+      if (r.requests) recordTokenUsage(pid, cid, r.tokenUsage, settings.ttsModel);
+    };
+    let result;
+    try {
+      result = await synthesizeImages({
+        keys: settings.keys,
+        activeKeyIndex: settings.activeKeyIndex,
+        ...ttsOptions(settings),
+        sections: (one === null ? sections : sections.filter((s) => s.idx === one)).map((s) => ({ ...s, voice: voiceFor(chapter, s, settings) })),
+        force: one === null ? [] : [one],
+        outDir,
+        onProgress: progress,
+        onAttempt: (idx, label) => store.recordKeyRequest(label, settings.ttsModel),
+      });
+    } catch (err) {
+      if (err.partial) record(err.partial); // quota beech mein khatam — jo bana wo saved + count
+      throw err;
+    }
+    record(result);
+    // Poora chapter ban gaya — purani clips (badla hua text/voice) saaf
+    if (one === null) pruneClips(outDir, sections.map((s) => sectionHash(s, settings, voiceFor(chapter, s, settings))));
+    return { requests: result.requests, clips: result.clips.length };
   });
   res.json({ ok: true, media: mediaStatus(pid, cid) });
 });
 
-// Start video render job
-app.post('/projects/:pid/chapters/:cid/video', (req, res) => {
+// Ek image ki apni voice set karo — body { from: <image number>, voice: '<voice id>' | '' (= default) }
+app.post('/projects/:pid/chapters/:cid/clip-voice', (req, res) => {
+  const { pid, cid } = req.params;
+  const chapter = store.getChapter(pid, cid);
+  if (!chapter) return res.status(404).json({ ok: false, error: 'Chapter not found' });
+  const from = parseInt(req.body && req.body.from, 10);
+  const voice = String((req.body && req.body.voice) || '').trim();
+  if (!Number.isInteger(from) || from < 1) return res.status(400).json({ ok: false, error: 'Bad image number.' });
+  if (voice && !VOICE_IDS.has(voice)) return res.status(400).json({ ok: false, error: 'Unknown voice.' });
+  if (jobs.isRunning(cid, 'voiceover')) return res.status(409).json({ ok: false, error: 'Wait for the running voice job to finish.' });
+  const clipVoices = { ...clipVoicesOf(chapter) };
+  if (voice) clipVoices[String(from)] = voice; else delete clipVoices[String(from)];
+  store.updateChapter(pid, cid, { flags: { ...(chapter.flags || {}), clipVoices } });
+  res.json({ ok: true, media: mediaStatus(pid, cid) });
+});
+
+// Ek image ki voice — image-03.mp3
+app.get('/projects/:pid/chapters/:cid/download/clip/:idx', (req, res) => {
+  const { pid, cid } = req.params;
+  const chapter = store.getChapter(pid, cid);
+  if (!chapter) return res.status(404).send('Not found');
+  const settings = store.getSettings();
+  const { sections } = sectionsFor(pid, chapter);
+  const i = sections.findIndex((s) => s.idx === parseInt(req.params.idx, 10));
+  if (i === -1) return res.status(404).send('Unknown image section');
+  const file = clipPaths(mediaDir(pid, cid), sectionHash(sections[i], settings, voiceFor(chapter, sections[i], settings))).mp3;
+  if (!fs.existsSync(file)) return res.status(404).send('Voice for this image is not generated yet');
+  res.download(file, `${uniqueClipNames(sections)[i]}.mp3`);
+});
+
+// Saari image voices ek ZIP mein (image-01.mp3, image-02.mp3…)
+app.get('/projects/:pid/chapters/:cid/download/voices.zip', (req, res) => {
   const { pid, cid } = req.params;
   const project = store.getProject(pid);
   const chapter = store.getChapter(pid, cid);
-  if (!project || !chapter) return res.status(404).json({ ok: false, error: 'Chapter not found' });
-  if (!chapter.images.length) return res.status(400).json({ ok: false, error: 'No images in this chapter.' });
-  const settings = store.getSettings();
-  const media = store.getMedia(cid);
-  const outDir = mediaDir(pid, cid);
-  if (!media || !media.audio || !fs.existsSync(path.join(outDir, 'voiceover.wav')))
-    return res.status(400).json({ ok: false, error: 'Generate the voiceover first.' });
-  if (media.audio_hash !== audioHashFor(chapter, settings))
-    return res.status(400).json({ ok: false, error: 'The script (or voice settings) changed after the voiceover was made — regenerate the voiceover first.' });
-  if (jobs.isRunning(cid, 'voiceover') || jobs.isRunning(cid, 'video'))
-    return res.status(409).json({ ok: false, error: 'A job is already running for this chapter.' });
-
-  const { sections } = parseSections(chapter.narration, chapter.images.length);
-  const timeline = media.audio.sections || [];
-  if (sections.length !== timeline.length)
-    return res.status(400).json({ ok: false, error: 'Section count changed — regenerate the voiceover first.' });
-  const timed = sections.map((s) => ({ ...s, ...timeline.find((t) => t.idx === s.idx) }));
-  const imagePaths = chapter.images.map((img) => path.join(UPLOADS_DIR, pid, cid, img.file));
-
-  jobs.start(cid, 'video', async (progress) => {
-    const render = await renderChapterVideo({
-      imagePaths,
-      sections: timed,
-      voiceoverWav: path.join(outDir, 'voiceover.wav'),
-      outDir,
-      settings,
-      credits: { title: `${project.name} — ${chapter.title}`, platform: project.platform, url: project.official_url, author: project.author },
-      onProgress: progress,
-    });
-    const listing = buildListing({ project, chapter, settings, render });
-    fs.writeFileSync(
-      path.join(outDir, 'description.txt'),
-      `TITLE:\n${listing.title}\n\nDESCRIPTION:\n${listing.description}\n\nTAGS:\n${listing.tags.join(', ')}\n` +
-        (listing.warnings.length ? `\nWARNINGS:\n- ${listing.warnings.join('\n- ')}\n` : '')
-    );
-    writeManifest({ outDir, project, chapter, settings, audio: media.audio, render, listing, sections });
-    store.saveMedia(pid, cid, { has_video: 1, video_hash: videoHashFor(media.audio_hash, settings, project), video_sec: render.durationSec });
-    return { durationSec: render.durationSec, avgShownPercent: render.avgShownPercent };
-  });
-  res.json({ ok: true, media: mediaStatus(pid, cid) });
-});
-
-// Downloads with nice file names
-app.get('/projects/:pid/chapters/:cid/download/:what', (req, res) => {
-  const project = store.getProject(req.params.pid);
-  const chapter = store.getChapter(req.params.pid, req.params.cid);
   if (!project || !chapter) return res.status(404).send('Not found');
-  const files = {
-    mp3: 'voiceover.mp3', wav: 'voiceover.wav', mp4: 'video.mp4', srt: 'captions.srt', description: 'description.txt', manifest: 'manifest.json',
-  };
-  const file = files[req.params.what];
-  if (!file) return res.status(404).send('Unknown download');
-  const abs = path.join(mediaDir(req.params.pid, req.params.cid), file);
-  if (!fs.existsSync(abs)) return res.status(404).send('File not ready yet');
-  const base = `${project.name} - ${chapter.title}`.replace(/[^a-zA-Z0-9 _-]/g, '').trim() || 'chapter';
-  res.download(abs, `${base}${path.extname(file)}`);
+  const settings = store.getSettings();
+  const { sections } = sectionsFor(pid, chapter);
+  const names = uniqueClipNames(sections);
+  const entries = [];
+  sections.forEach((s, i) => {
+    const file = clipPaths(mediaDir(pid, cid), sectionHash(s, settings, voiceFor(chapter, s, settings))).mp3;
+    if (fs.existsSync(file)) entries.push({ name: `${names[i]}.mp3`, data: fs.readFileSync(file) });
+  });
+  if (!entries.length) return res.status(404).send('No voices generated yet');
+  res.setHeader('Content-Type', 'application/zip');
+  res.setHeader('Content-Disposition', `attachment; filename="${fileBase(project, chapter)} - voices.zip"`);
+  res.send(zipStore(entries));
 });
 
 // ---------- Token Stats API ----------
@@ -542,9 +847,37 @@ app.get('/settings', (req, res) => {
     settings: store.getSettings(),
     promptFile: store.PROMPT_FILE_LABEL,
     saved: req.query.saved === '1',
-    voices: TTS_VOICES,
-    presets: Object.keys(PRESETS),
+    voices: VOICE_CATALOG,
+    voicesMsg: req.query.voicesMsg || '',
+    voicesErr: req.query.voicesErr || '',
   });
+});
+
+// Image Voices card ka switch — HAR baar secret number (PIN). Pehli baar PIN banta hai; "changepin" se badalta hai.
+app.post('/settings/voices-card', (req, res) => {
+  const b = req.body || {};
+  const settings = store.getSettings();
+  const back = (err, msg) =>
+    res.redirect('/settings?' + (err ? 'voicesErr=' + encodeURIComponent(err) : 'voicesMsg=' + encodeURIComponent(msg)) + '#voices-card');
+  const pinOk = (p) => /^\d{4,8}$/.test(String(p || ''));
+  const action = b.action === 'changepin' ? 'changepin' : 'toggle';
+  if (!settings.hasVoicesPin) {
+    if (!pinOk(b.newPin)) return back('The secret number must be 4-8 digits.');
+    if (b.newPin !== b.newPin2) return back('The two secret numbers do not match.');
+    store.setVoicesPin(b.newPin);
+    if (action === 'changepin') return back(null, 'Secret number set.');
+  } else {
+    if (!store.verifyVoicesPin(b.pin)) return back('Wrong secret number — nothing changed.');
+    if (action === 'changepin') {
+      if (!pinOk(b.newPin)) return back('The new secret number must be 4-8 digits.');
+      if (b.newPin !== b.newPin2) return back('The two new secret numbers do not match.');
+      store.setVoicesPin(b.newPin);
+      return back(null, 'Secret number changed.');
+    }
+  }
+  const enabled = b.enabled === 'on' ? 'on' : 'off';
+  store.saveSettings({ showVoicesCard: enabled });
+  back(null, enabled === 'on' ? 'Image Voices card is now ON — it shows on every chapter page.' : 'Image Voices card is now OFF — hidden on every chapter page.');
 });
 
 app.post('/settings', (req, res) => {
@@ -557,18 +890,11 @@ app.post('/settings', (req, res) => {
     model: str(b.model, 'gemini-3.8-flash') || 'gemini-3.8-flash',
     commentaryMode: b.commentaryMode === 'on' ? 'on' : 'off',
     ttsModel: str(b.ttsModel, 'gemini-3.8-flash-tts') || 'gemini-3.8-flash-tts',
-    ttsVoice: str(b.ttsVoice, 'Charon') || 'Charon',
+    ttsVoice: str(b.ttsVoice, 'en-us-zeno') || 'en-us-zeno',
     ttsStyle: str(b.ttsStyle),
-    ttsMaxChars: str(b.ttsMaxChars, '2000'),
+    ttsTemperature: str(b.ttsTemperature, '1.1'),
+    ttsLanguage: str(b.ttsLanguage), // '' = auto-detect
     ttsDailyLimit: str(b.ttsDailyLimit, '10'),
-    videoPreset: b.videoPreset === 'portrait' ? 'portrait' : 'landscape',
-    videoFps: str(b.videoFps, '30'),
-    videoQuality: str(b.videoQuality, '22'),
-    coveragePercent: str(b.coveragePercent, '50'),
-    holdSec: str(b.holdSec, '0.4'),
-    channelName: str(b.channelName).slice(0, 60),
-    trimFirstTop: str(b.trimFirstTop, '0'),
-    trimLastBottom: str(b.trimLastBottom, '0'),
   });
   res.redirect('/settings?saved=1');
 });

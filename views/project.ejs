@@ -4,18 +4,18 @@
   <div>
     <p class="crumbs"><a href="/">Projects</a> <span class="crumb-sep">/</span> <span><%= project.name %></span></p>
     <h1><%= project.name %></h1>
-    <p class="muted"><%= project.chapters.length %> chapter<%= project.chapters.length === 1 ? '' : 's' %> · <%= project.characters.length %> character<%= project.characters.length === 1 ? '' : 's' %><% if (project.platform) { %> · 📖 <%= project.platform %><% } %></p>
+    <p class="muted"><%= project.chapters.length %> chapter<%= project.chapters.length === 1 ? '' : 's' %> · <%= project.characters.length %> character<%= project.characters.length === 1 ? '' : 's' %><% if (project.platform) { %> · <%= project.platform %><% } %></p>
   </div>
 </section>
 
 <form method="POST" action="/projects/<%= project.id %>/chapters" class="create-bar">
   <input type="text" name="title" placeholder="New chapter — leave empty to name it 'Chapter <%= project.chapters.length + 1 %>'" />
-  <button type="submit" class="btn primary lg">➕ Add Chapter</button>
+  <button type="submit" class="btn primary lg"><i class="ic ic-plus" aria-hidden="true"></i>Add chapter</button>
 </form>
 
 <% if (project.chapters.length === 0) { %>
   <div class="empty-state">
-    <div class="empty-icon">🎬</div>
+    <i class="ic ic-film empty-icon" aria-hidden="true"></i>
     <p>No chapters yet — add your first chapter above!</p>
   </div>
 <% } %>
@@ -27,26 +27,26 @@
         <div class="chapter-row-main">
           <h3><%= c.title %></h3>
           <p class="muted">
-            🖼 <%= c.images.length %> image<%= c.images.length === 1 ? '' : 's' %>
+            <i class="ic ic-image" aria-hidden="true"></i> <%= c.images.length %> image<%= c.images.length === 1 ? '' : 's' %>
           </p>
         </div>
-        <% if (c.status === 'done') { %><span class="pill done">✅ Script ready</span>
-        <% } else if (c.status === 'generating') { %><span class="pill gen">⏳ Generating…</span>
-        <% } else if (c.status === 'error') { %><span class="pill err">❌ Error</span>
-        <% } else if (c.images.length) { %><span class="pill">🟡 Pending</span>
-        <% } else { %><span class="pill idle">— Empty</span><% } %>
+        <% if (c.status === 'done') { %><span class="pill done"><i class="ic ic-check-circle" aria-hidden="true"></i>Script ready</span>
+        <% } else if (c.status === 'generating') { %><span class="pill gen"><i class="ic ic-clock" aria-hidden="true"></i>Generating…</span>
+        <% } else if (c.status === 'error') { %><span class="pill err"><i class="ic ic-x-circle" aria-hidden="true"></i>Error</span>
+        <% } else if (c.images.length) { %><span class="pill pending"><i class="ic ic-zap" aria-hidden="true"></i>Ready to generate</span>
+        <% } else { %><span class="pill idle">No images yet</span><% } %>
       </a>
-      <form method="POST" action="/projects/<%= project.id %>/chapters/<%= c.id %>/delete" onsubmit="return confirm('Delete this chapter?')">
-        <button type="submit" class="btn ghost-danger tiny" title="Delete chapter">🗑</button>
+      <form method="POST" action="/projects/<%= project.id %>/chapters/<%= c.id %>/delete" data-confirm="Delete “<%= c.title %>”? Its images, script and voice files are removed." data-confirm-title="Delete chapter" data-confirm-text="Delete chapter">
+        <button type="submit" class="btn icon-only ghost-danger" title="Delete chapter" aria-label="Delete chapter <%= c.title %>"><i class="ic ic-trash" aria-hidden="true"></i></button>
       </form>
     </div>
   <% }) %>
 </div>
 
-<!-- ---------- Source info (credits / end card / description) ---------- -->
+<!-- ---------- Source info (credits / description) ---------- -->
 <section class="card source-card" id="source">
   <div class="card-head">
-    <h2>📖 Official Source <span class="muted small-note">— used in the video end card and the YouTube description credit block</span></h2>
+    <h2><i class="ic ic-book" aria-hidden="true"></i>Official source <span class="muted small-note">— used in the YouTube description credit block</span></h2>
   </div>
   <form method="POST" action="/projects/<%= project.id %>/info" class="source-form">
     <label><span>Author / Artist</span><input type="text" name="author" value="<%= project.author || '' %>" placeholder="e.g. Shin Hwa-jin" /></label>
@@ -59,37 +59,52 @@
       </datalist>
     </label>
     <label><span>Official URL <span class="muted">(never a pirate/aggregator link)</span></span><input type="url" name="official_url" value="<%= project.official_url || '' %>" placeholder="https://www.webtoons.com/…" /></label>
-    <button type="submit" class="btn primary small">💾 Save</button>
+    <button type="submit" class="btn primary small"><i class="ic ic-save" aria-hidden="true"></i>Save</button>
   </form>
   <% if (!project.platform) { %>
-    <p class="muted small-note" style="margin-top:10px">⚠️ Not set yet — the policy checklist on every chapter will keep warning until the official platform is filled in.</p>
+    <p class="note-warn small-note"><i class="ic ic-alert" aria-hidden="true"></i><span>Not set yet — the policy checklist on every chapter will keep warning until the official platform is filled in.</span></p>
   <% } %>
 </section>
 
 <!-- ---------- Character roster ---------- -->
 <section class="card char-card" id="characters">
   <div class="card-head">
-    <h2>👥 Character Roster <span class="count-chip"><%= project.characters.length %></span></h2>
+    <h2><i class="ic ic-users" aria-hidden="true"></i>Character roster <span class="count-chip"><%= project.characters.length %></span></h2>
     <span class="muted small-note">Auto-filled after every generate · names here are forced into every chapter's script</span>
   </div>
+
+  <% if (rosterMsg) { %><div class="alert done tight" role="status"><i class="ic ic-check-circle" aria-hidden="true"></i><span><%= rosterMsg %></span></div><% } %>
 
   <% if (project.characters.length === 0) { %>
     <p class="muted">No characters yet. Generate a chapter script and Gemini will detect them automatically, or add one manually below.</p>
   <% } %>
+  <% if (otherProjects && otherProjects.length) { %>
+    <form method="POST" action="/projects/<%= project.id %>/characters/copy-from" class="char-copy">
+      <span class="muted small-note">Sequel / season 2? Copy the roster from:</span>
+      <select name="sourcePid">
+        <% otherProjects.forEach(function (p) { %><option value="<%= p.id %>"><%= p.name %></option><% }) %>
+      </select>
+      <button type="submit" class="btn small"><i class="ic ic-copy" aria-hidden="true"></i>Copy roster</button>
+    </form>
+  <% } %>
+
+  <p class="muted small-note" style="margin-bottom:10px">How recognition works: <strong>Appearance</strong> = permanent features only · <strong>Aliases</strong> = other spellings/titles the app will map to this name (auto-learned from scripts) · <strong>Notes</strong> = how to tell them apart from look-alikes · <strong>Say as</strong> = how the voice should pronounce the name. Renaming keeps the old spelling as an alias automatically. Removing a character also stops Gemini from re-adding that name.</p>
 
   <div class="char-list">
     <% project.characters.forEach(function (ch) { %>
-      <details class="char-item">
+      <details class="char-item <%= ch.pending ? 'pending' : '' %>">
         <summary>
           <span class="char-name"><%= ch.name %></span>
           <% if (ch.role) { %><span class="badge char-role <%= ch.role.toLowerCase() %>"><%= ch.role %></span><% } %>
+          <% if (ch.status && ch.status !== 'alive') { %><span class="badge char-status"><%= ch.status %></span><% } %>
+          <% if (ch.pending) { %><span class="badge char-status">unconfirmed</span><% } %>
           <% if (ch.aliases) { %><span class="muted char-alias">aka <%= ch.aliases %></span><% } %>
           <% if (ch.relationships) { %><span class="muted char-rel">· <%= ch.relationships.length > 70 ? ch.relationships.slice(0, 68) + '…' : ch.relationships %></span><% } %>
-          <span class="char-edit-hint muted">✏️ edit</span>
+          <span class="char-edit-hint muted"><i class="ic ic-edit" aria-hidden="true"></i>Edit</span>
         </summary>
         <form method="POST" action="/projects/<%= project.id %>/characters/<%= ch.id %>/update" class="char-form">
           <label><span>Name <span class="muted">(used in every script)</span></span><input type="text" name="name" value="<%= ch.name %>" required /></label>
-          <label><span>Aliases <span class="muted">(comma-separated — other spellings)</span></span><input type="text" name="aliases" value="<%= ch.aliases %>" placeholder="Hyeon, Ha-Hyun" /></label>
+          <label><span>Aliases <span class="muted">(comma-separated — other spellings, titles, epithets)</span></span><input type="text" name="aliases" value="<%= ch.aliases %>" placeholder="Ha-Hyun, Young Master Ha" /></label>
           <label><span>Role</span>
             <select name="role">
               <% ['', 'hero', 'villain', 'side'].forEach(function (r) { %>
@@ -98,19 +113,38 @@
               <% if (ch.role && !['hero','villain','side'].includes(ch.role.toLowerCase())) { %><option value="<%= ch.role %>" selected><%= ch.role %></option><% } %>
             </select>
           </label>
-          <label><span>Appearance <span class="muted">(English — how Gemini recognises them)</span></span><input type="text" name="look" value="<%= ch.look %>" placeholder="long black hair, red robe, scar on left cheek" /></label>
-          <label class="char-wide"><span>Relationships <span class="muted">(used as "Hyeon ki ammi", "uska beta"…)</span></span><input type="text" name="relationships" value="<%= ch.relationships %>" placeholder="Mother of Ha Hyeon; daughter of Namgung Muryong" /></label>
+          <label><span>Status <span class="muted">(dead = only in flashbacks/mentions)</span></span>
+            <select name="status">
+              <% ['alive', 'dead', 'missing', 'unknown'].forEach(function (st) { %>
+                <option value="<%= st %>" <%= (ch.status || 'alive') === st ? 'selected' : '' %>><%= st %></option>
+              <% }) %>
+            </select>
+          </label>
+          <label><span>Appearance <span class="muted">(English, PERMANENT only — face, hair, eyes, scars, build; no clothes)<%= ch.look_source === 'user' ? ' · yours, AI never overwrites' : '' %></span></span><input type="text" name="look" value="<%= ch.look %>" placeholder="long black hair, sharp eyes, scar on left cheek, tall" /></label>
+          <label><span>Notes <span class="muted">(how to tell apart from look-alikes)</span></span><input type="text" name="notes" value="<%= ch.notes || '' %>" placeholder="twin of X — has the eye scar; the brother does not" /></label>
+          <label><span>Say as <span class="muted">(voice pronunciation, optional)</span></span><input type="text" name="pronounce" value="<%= ch.pronounce || '' %>" placeholder="Yong-ryong" /></label>
+          <label class="char-wide"><span>Outfits seen <span class="muted">(auto-added per chapter — clothes change, the character doesn't)</span></span><input type="text" name="outfits" value="<%= ch.outfits || '' %>" placeholder="Chapter 1: green-blue martial robes; Chapter 4: black cloak" /></label>
+          <label class="char-wide"><span>Relationships <span class="muted">(used as "… ki ammi", "uska beta"; "Chapter N:" tag = revealed there, hidden when regenerating earlier chapters)</span></span><input type="text" name="relationships" value="<%= ch.relationships %>" placeholder="Chapter 1: mother of …; Chapter 5: daughter of …" /></label>
           <div class="actions">
-            <button type="submit" class="btn primary small">💾 Save</button>
-            <button type="submit" class="btn ghost-danger small" formaction="/projects/<%= project.id %>/characters/<%= ch.id %>/delete" formnovalidate onclick="return confirm('Remove <%= ch.name.replace(/'/g, '') %> from the roster?')">🗑 Remove</button>
+            <button type="submit" class="btn primary small"><i class="ic ic-save" aria-hidden="true"></i>Save</button>
+            <button type="submit" class="btn ghost-danger small" formaction="/projects/<%= project.id %>/characters/<%= ch.id %>/delete" formnovalidate data-confirm="Remove <%= ch.name %> from the roster? Gemini will not re-add this name." data-confirm-title="Remove character" data-confirm-text="Remove"><i class="ic ic-trash" aria-hidden="true"></i>Remove</button>
           </div>
         </form>
+        <% if (project.characters.length > 1) { %>
+          <form method="POST" action="/projects/<%= project.id %>/characters/<%= ch.id %>/merge-into" class="char-merge" data-confirm="Merge <%= ch.name %> into the selected character? This row is removed and its name becomes an alias of the other one." data-confirm-title="Merge characters" data-confirm-text="Merge">
+            <span class="muted small-note">Duplicate of someone? Merge into:</span>
+            <select name="target">
+              <% project.characters.filter(function (o) { return o.id !== ch.id; }).forEach(function (o) { %><option value="<%= o.id %>"><%= o.name %></option><% }) %>
+            </select>
+            <button type="submit" class="btn small"><i class="ic ic-merge" aria-hidden="true"></i>Merge</button>
+          </form>
+        <% } %>
       </details>
     <% }) %>
   </div>
 
   <details class="char-add">
-    <summary class="btn small">➕ Add character manually</summary>
+    <summary class="btn small"><i class="ic ic-plus" aria-hidden="true"></i>Add character manually</summary>
     <form method="POST" action="/projects/<%= project.id %>/characters" class="char-form">
       <label><span>Name</span><input type="text" name="name" required placeholder="Namgung Hyeon" /></label>
       <label><span>Aliases</span><input type="text" name="aliases" placeholder="Hyeon, Ha-Hyun" /></label>
@@ -122,9 +156,10 @@
           <option value="side">side</option>
         </select>
       </label>
-      <label><span>Appearance</span><input type="text" name="look" placeholder="short description in English" /></label>
+      <label><span>Appearance <span class="muted">(permanent features, English)</span></span><input type="text" name="look" placeholder="brown hair tied up, hairpin, young boy" /></label>
+      <label><span>Notes <span class="muted">(how to tell apart)</span></span><input type="text" name="notes" placeholder="optional" /></label>
       <label class="char-wide"><span>Relationships</span><input type="text" name="relationships" placeholder="Son of …; grandson of …" /></label>
-      <button type="submit" class="btn primary small">➕ Add</button>
+      <button type="submit" class="btn primary small"><i class="ic ic-plus" aria-hidden="true"></i>Add character</button>
     </form>
   </details>
 </section>

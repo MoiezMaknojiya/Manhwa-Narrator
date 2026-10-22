@@ -2,21 +2,80 @@
   </div><!-- /.main -->
 </div><!-- /.shell -->
 
-<div id="toasts" class="toasts"></div>
+<div id="toasts" class="toasts" role="status" aria-live="polite"></div>
+
+<!-- Confirm dialog — window.confirm ki jagah (data-confirm attribute ya confirmDialog() se) -->
+<dialog id="confirmDlg" class="dlg" aria-labelledby="confirmTitle" aria-describedby="confirmMsg">
+  <form method="dialog" class="dlg-form">
+    <h3 id="confirmTitle">Are you sure?</h3>
+    <p id="confirmMsg" class="muted"></p>
+    <div class="dlg-actions">
+      <button type="submit" value="cancel" class="btn" id="confirmCancel">Cancel</button>
+      <button type="submit" value="ok" class="btn danger" id="confirmOk">Delete</button>
+    </div>
+  </form>
+</dialog>
 
 <script>
-  // ---- Toast notifications (bottom-right, auto-dismiss) ----
+  // ---- Toasts (bottom-right, auto-dismiss, icon by type: done / err / warn / info) ----
   window.toast = function (msg, type) {
     const box = document.getElementById('toasts');
+    const kind = ['done', 'err', 'warn'].includes(type) ? type : 'info';
     const t = document.createElement('div');
-    t.className = 'toast ' + (type || '');
-    t.textContent = msg;
+    t.className = 'toast ' + kind;
+    t.innerHTML = '<i class="ic ic-' + { done: 'check-circle', err: 'x-circle', warn: 'alert', info: 'info' }[kind] + '" aria-hidden="true"></i><span></span>';
+    t.lastChild.textContent = msg;
     box.appendChild(t);
     requestAnimationFrame(() => t.classList.add('show'));
-    setTimeout(() => {
-      t.classList.remove('show');
-      setTimeout(() => t.remove(), 300);
-    }, 3200);
+    const ttl = kind === 'err' ? 5500 : 3200;
+    setTimeout(() => { t.classList.remove('show'); setTimeout(() => t.remove(), 300); }, ttl);
+  };
+
+  // ---- Confirm dialog: confirmDialog(message, { title, confirmText, danger }) -> Promise<boolean> ----
+  window.confirmDialog = function (msg, opts) {
+    opts = opts || {};
+    const dlg = document.getElementById('confirmDlg');
+    document.getElementById('confirmTitle').textContent = opts.title || 'Are you sure?';
+    document.getElementById('confirmMsg').textContent = msg;
+    const ok = document.getElementById('confirmOk');
+    ok.textContent = opts.confirmText || 'Confirm';
+    ok.className = 'btn ' + (opts.danger === false ? 'primary' : 'danger');
+    return new Promise((resolve) => {
+      dlg.returnValue = '';
+      dlg.addEventListener('close', () => resolve(dlg.returnValue === 'ok'), { once: true });
+      dlg.showModal();
+      document.getElementById('confirmCancel').focus();
+    });
+  };
+  // <form data-confirm="…"> aur <button data-confirm="…"> pehle poochte hain (data-confirm-title / data-confirm-text optional)
+  document.addEventListener('submit', async (e) => {
+    const f = e.target;
+    if (!(f instanceof HTMLFormElement) || !f.dataset.confirm) return;
+    if (f.dataset.confirmed) { delete f.dataset.confirmed; return; }
+    e.preventDefault();
+    const sub = e.submitter;
+    if (await confirmDialog(f.dataset.confirm, { title: f.dataset.confirmTitle, confirmText: f.dataset.confirmText || 'Delete' })) {
+      f.dataset.confirmed = '1';
+      if (sub) f.requestSubmit(sub); else f.requestSubmit();
+    }
+  }, true);
+  document.addEventListener('click', async (e) => {
+    const b = e.target.closest('button[data-confirm]');
+    if (!b) return;
+    if (b.dataset.confirmed) { delete b.dataset.confirmed; return; }
+    e.preventDefault(); e.stopImmediatePropagation();
+    if (await confirmDialog(b.dataset.confirm, { title: b.dataset.confirmTitle, confirmText: b.dataset.confirmText || 'Remove' })) { b.dataset.confirmed = '1'; b.click(); }
+  }, true);
+
+  // ---- Button feedback: flashBtn(btn, 'Copied') — label thodi der ke liye badal kar wapas ----
+  window.flashBtn = function (btn, text, ms) {
+    if (!btn || btn.dataset.flashing) return;
+    btn.dataset.flashing = '1';
+    const old = btn.innerHTML;
+    btn.style.minWidth = btn.offsetWidth + 'px';
+    btn.innerHTML = '<i class="ic ic-check" aria-hidden="true"></i>' + text;
+    btn.classList.add('flash');
+    setTimeout(() => { btn.innerHTML = old; btn.classList.remove('flash'); btn.style.minWidth = ''; delete btn.dataset.flashing; }, ms || 1400);
   };
 
   // ---- Lightbox: kisi bhi thumbnail par click -> full image ----
@@ -25,6 +84,8 @@
     if (!img) return;
     const overlay = document.createElement('div');
     overlay.className = 'lightbox';
+    overlay.setAttribute('role', 'dialog');
+    overlay.setAttribute('aria-label', 'Image preview — click or press Escape to close');
     overlay.innerHTML = '<img src="' + img.src + '" alt="" /><span class="lightbox-hint">Click anywhere or press Esc to close</span>';
     const close = () => { overlay.remove(); document.removeEventListener('keydown', onKey); };
     const onKey = (ev) => { if (ev.key === 'Escape') close(); };

@@ -1,0 +1,707 @@
+{
+  "fetchedAt": "2026-10-15T20:38:47.227Z",
+  "source": "GET https://generativelanguage.googleapis.com/v1beta/voices (en-US: 30 classic Gemini voices + named character voices; numbered advisor/assistant/commercial voices left out)",
+  "note": "voice = the value sent to the TTS API. Classic voices use their name (e.g. Charon), character voices use their id (e.g. en-us-zeno).",
+  "voices": [
+    {
+      "voice": "en-us-arlo",
+      "name": "Arlo",
+      "kind": "character",
+      "gender": "male",
+      "pitch": "low",
+      "accent": "Northwest",
+      "persona": "Concierge & EA (Tour Guide)",
+      "description": "61-year-old Tour Guide from the Northwest. Speaks with a Northwest accent. Currently sitting on couch. Sounds confident and clear."
+    },
+    {
+      "voice": "en-us-bodi",
+      "name": "Bodi",
+      "kind": "character",
+      "gender": "male",
+      "pitch": "low",
+      "accent": "West Coast",
+      "persona": "Educational Tutor (Chess Instructor)",
+      "description": "55-year-old Chess Instructor from the West Coast. Speaks with a West Coast accent. Voice is intimate talkshow."
+    },
+    {
+      "voice": "en-us-brio",
+      "name": "Brio",
+      "kind": "character",
+      "gender": "male",
+      "pitch": "low",
+      "accent": "West Coast",
+      "persona": "News & Podcast Host / Podcaster (Journalist)",
+      "description": "29-year-old Journalist from the West Coast. Speaks with a West Coast accent. Voice is intimate talkshow."
+    },
+    {
+      "voice": "en-us-cleo",
+      "name": "Cleo",
+      "kind": "character",
+      "gender": "female",
+      "pitch": "high",
+      "accent": "East Coast",
+      "persona": "Concierge & EA (Hotel Concierge)",
+      "description": "32-year-old Hotel Concierge from the East Coast. Speaks with an East Coast accent. Currently on the phone. Voice is warm and engaging."
+    },
+    {
+      "voice": "en-us-cruz",
+      "name": "Cruz",
+      "kind": "character",
+      "gender": "male",
+      "pitch": "low",
+      "accent": "Northwest",
+      "persona": "High-Trust Advisor / Authoritative Advisor (Lawyer)",
+      "description": "37-year-old Lawyer from the Northwest. Speaks with a Northwest accent. Currently in a bookstore. Tone is professional yet approachable."
+    },
+    {
+      "voice": "en-us-daro",
+      "name": "Daro",
+      "kind": "character",
+      "gender": "male",
+      "pitch": "low",
+      "accent": "Northwest",
+      "persona": "Customer Support Agent / Call Center Agent (Customer Service Agent)",
+      "description": "26-year-old Customer Service Agent from the Northwest. Speaks with a Northwest accent. Currently in an oscar winning film. Sounds confident and clear."
+    },
+    {
+      "voice": "en-us-elio",
+      "name": "Elio",
+      "kind": "character",
+      "gender": "male",
+      "pitch": "medium",
+      "accent": "East Coast",
+      "persona": "High-Trust Advisor / Authoritative Advisor (Lawyer)",
+      "description": "45-year-old Lawyer from the East Coast. Speaks with an East Coast accent. Voice is comforting someone who is stressed."
+    },
+    {
+      "voice": "en-us-enya",
+      "name": "Enya",
+      "kind": "character",
+      "gender": "female",
+      "pitch": "medium",
+      "accent": "Gulf Coast",
+      "persona": "Tech Support Agent / Tech Advisor",
+      "description": "28-year-old Tech Support Agent from the Gulf Coast. Speaks with a Gulf Coast accent. Currently in an oscar winning film. Tone is professional yet approachable."
+    },
+    {
+      "voice": "en-us-enzo",
+      "name": "Enzo",
+      "kind": "character",
+      "gender": "male",
+      "pitch": "low",
+      "accent": "West Coast",
+      "persona": "Storyteller & Narrator",
+      "description": "62-year-old Storyteller from the West Coast. Speaks with a West Coast accent. Voice is crisp and eager."
+    },
+    {
+      "voice": "en-us-finn",
+      "name": "Finn",
+      "kind": "character",
+      "gender": "male",
+      "pitch": "low",
+      "accent": "Northwest",
+      "persona": "Concierge & EA (Hotel Concierge)",
+      "description": "23-year-old Hotel Concierge from the Northwest. Speaks with a Northwest accent. Currently in an indie film. Tone is professional yet approachable."
+    },
+    {
+      "voice": "en-us-fola",
+      "name": "Fola",
+      "kind": "character",
+      "gender": "female",
+      "pitch": "medium",
+      "accent": "Northwest",
+      "persona": "Customer Support Agent / Call Center Agent (Customer Service Agent)",
+      "description": "37-year-old Customer Service Agent from the Northwest. Speaks with a Northwest accent. Voice is clear, medium-pitch, and friendly."
+    },
+    {
+      "voice": "en-us-gero",
+      "name": "Gero",
+      "kind": "character",
+      "gender": "male",
+      "pitch": "low",
+      "accent": "Inland Southern",
+      "persona": "Companion & Peer / Digital Assistant (Sibling)",
+      "description": "22-year-old Sibling from the Inland South. Speaks with an Inland Southern accent. Voice is clear, medium-pitch, and friendly."
+    },
+    {
+      "voice": "en-us-hali",
+      "name": "Hali",
+      "kind": "character",
+      "gender": "female",
+      "pitch": "high",
+      "accent": "Midwest",
+      "persona": "Character & Theatrical (Person Giving Driving Directions)",
+      "description": "43-year-old Person Giving Driving Directions from the Midwest. Speaks with a Midwest accent. Voice is comforting someone who is stressed."
+    },
+    {
+      "voice": "en-us-jett",
+      "name": "Jett",
+      "kind": "character",
+      "gender": "male",
+      "pitch": "low",
+      "accent": "East Coast",
+      "persona": "Tech Support Agent / Tech Advisor",
+      "description": "61-year-old Tech Support Agent from the East Coast. Speaks with an East Coast accent. Voice is engaging and empathic."
+    },
+    {
+      "voice": "en-us-jori",
+      "name": "Jori",
+      "kind": "character",
+      "gender": "female",
+      "pitch": "low",
+      "accent": "Northwest",
+      "persona": "Companion & Peer / Digital Assistant (Radio Host)",
+      "description": "38-year-old Radio Host from the Northwest. Speaks with a Northwest accent. Currently sitting on couch. Tone is professional yet approachable."
+    },
+    {
+      "voice": "en-us-kira",
+      "name": "Kira",
+      "kind": "character",
+      "gender": "female",
+      "pitch": "medium",
+      "accent": "West Coast",
+      "persona": "Video Voiceover & Host / Training Voiceover (Instructional Video Host)",
+      "description": "46-year-old Instructional Video Host from the West Coast. Speaks with a West Coast accent. Voice is cool, confident, and collaborative."
+    },
+    {
+      "voice": "en-us-knox",
+      "name": "Knox",
+      "kind": "character",
+      "gender": "male",
+      "pitch": "low",
+      "accent": "East Coast",
+      "persona": "Tech Support Agent / Tech Advisor",
+      "description": "61-year-old Tech Support Agent from the East Coast. Speaks with an East Coast accent. Tone is conversational, slightly dry humor, and warm"
+    },
+    {
+      "voice": "en-us-koda",
+      "name": "Koda",
+      "kind": "character",
+      "gender": "male",
+      "pitch": "low",
+      "accent": "Inland Southern",
+      "persona": "Advertising Pitch & Commerce / Commercial Voiceover (Influencer)",
+      "description": "21-year-old Influencer from the Inland South. Speaks with an Inland Southern accent. Tone is objective, direct, and helpful"
+    },
+    {
+      "voice": "en-us-lora",
+      "name": "Lora",
+      "kind": "character",
+      "gender": "female",
+      "pitch": "medium",
+      "accent": "Inland Southern",
+      "persona": "Concierge & EA (Executive Assistant)",
+      "description": "30-year-old Executive Assistant from the Inland South. Speaks with an Inland Southern accent. Voice is clear, medium-pitch, and friendly."
+    },
+    {
+      "voice": "en-us-ludo",
+      "name": "Ludo",
+      "kind": "character",
+      "gender": "male",
+      "pitch": "low",
+      "accent": "Northwest",
+      "persona": "Video Voiceover & Host / Training Voiceover (Instructional Video Host)",
+      "description": "46-year-old Instructional Video Host from the Northwest. Speaks with a Northwest accent. Currently sitting next to you on an airplane. Sounds confident and clear."
+    },
+    {
+      "voice": "en-us-lumi",
+      "name": "Lumi",
+      "kind": "character",
+      "gender": "female",
+      "pitch": "low",
+      "accent": "Gulf Coast",
+      "persona": "Educational Tutor (Teacher)",
+      "description": "61-year-old Teacher from the Gulf Coast. Speaks with a Gulf Coast accent. Currently on the phone. Tone is professional yet approachable."
+    },
+    {
+      "voice": "en-us-mako",
+      "name": "Mako",
+      "kind": "character",
+      "gender": "male",
+      "pitch": "low",
+      "accent": "Northwest",
+      "persona": "Video Voiceover & Host / Training Voiceover (Instructional Video Host)",
+      "description": "45-year-old Instructional Video Host from the Northwest. Speaks with a Northwest accent. Voice is energetic, colorful, and fast"
+    },
+    {
+      "voice": "en-us-milo",
+      "name": "Milo",
+      "kind": "character",
+      "gender": "male",
+      "pitch": "low",
+      "accent": "East Coast",
+      "persona": "Customer Support Agent / Call Center Agent (Customer Service Agent)",
+      "description": "42-year-old Customer Service Agent from the East Coast. Speaks with an East Coast accent. Voice is intimate talkshow."
+    },
+    {
+      "voice": "en-us-neno",
+      "name": "Neno",
+      "kind": "character",
+      "gender": "male",
+      "pitch": "low",
+      "accent": "Inland Southern",
+      "persona": "Companion & Peer / Digital Assistant (Sibling)",
+      "description": "29-year-old Sibling from the Inland South. Speaks with an Inland Southern accent. Voice is deep, velvety, and unhurried."
+    },
+    {
+      "voice": "en-us-nika",
+      "name": "Nika",
+      "kind": "character",
+      "gender": "female",
+      "pitch": "medium",
+      "accent": "West Coast",
+      "persona": "Advertising Pitch & Commerce / Commercial Voiceover (Influencer)",
+      "description": "27-year-old Influencer from the West Coast. Speaks with a West Coast accent. Currently brainstorming in a meeting. Tone is professional yet approachable."
+    },
+    {
+      "voice": "en-us-nyla",
+      "name": "Nyla",
+      "kind": "character",
+      "gender": "female",
+      "pitch": "high",
+      "accent": "Northwest",
+      "persona": "Tech Support Agent / Tech Advisor (Architect)",
+      "description": "31-year-old Architect from the Northwest. Speaks with a Northwest accent. Currently sitting next to you on an airplane. Tone is professional yet approachable."
+    },
+    {
+      "voice": "en-us-olin",
+      "name": "Olin",
+      "kind": "character",
+      "gender": "male",
+      "pitch": "low",
+      "accent": "Inland Southern",
+      "persona": "Companion & Peer / Digital Assistant (Parent)",
+      "description": "44-year-old Parent from the Inland South. Speaks with an Inland Southern accent. Voice is light, airy, and precise"
+    },
+    {
+      "voice": "en-us-rami",
+      "name": "Rami",
+      "kind": "character",
+      "gender": "male",
+      "pitch": "low",
+      "accent": "East Coast",
+      "persona": "Companion & Peer / Digital Assistant (Podcast Interviewer)",
+      "description": "29-year-old Podcast Interviewer from the East Coast. Speaks with an East Coast accent. Currently in an indie film. Tone is professional yet approachable."
+    },
+    {
+      "voice": "en-us-riko",
+      "name": "Riko",
+      "kind": "character",
+      "gender": "male",
+      "pitch": "low",
+      "accent": "East Coast",
+      "persona": "Storyteller & Narrator (Nature Documentary Narrator)",
+      "description": "47-year-old Nature Documentary Narrator from the East Coast. Speaks with an East Coast accent. Currently in a bookstore. Sounds confident and clear."
+    },
+    {
+      "voice": "en-us-rina",
+      "name": "Rina",
+      "kind": "character",
+      "gender": "female",
+      "pitch": "medium",
+      "accent": "Inland Southern",
+      "persona": "Video Voiceover & Host / Training Voiceover (Cooking Show Host)",
+      "description": "24-year-old Cooking Show Host from the Inland South. Speaks with an Inland Southern accent. Voice is relaxed."
+    },
+    {
+      "voice": "en-us-sami",
+      "name": "Sami",
+      "kind": "character",
+      "gender": "female",
+      "pitch": "low",
+      "accent": "East Coast",
+      "persona": "Storyteller & Narrator (Nature Documentary Narrator)",
+      "description": "64-year-old Nature Documentary Narrator from the East Coast. Speaks with an East Coast accent. Voice is cool, confident, and collaborative."
+    },
+    {
+      "voice": "en-us-sola",
+      "name": "Sola",
+      "kind": "character",
+      "gender": "female",
+      "pitch": "high",
+      "accent": "West Coast",
+      "persona": "Educational Tutor (Teacher)",
+      "description": "31-year-old Teacher from the West Coast. Speaks with a West Coast accent. Voice is relaxed."
+    },
+    {
+      "voice": "en-us-tari",
+      "name": "Tari",
+      "kind": "character",
+      "gender": "female",
+      "pitch": "medium",
+      "accent": "Midwest",
+      "persona": "Companion & Peer / Digital Assistant (Parent)",
+      "description": "35-year-old Parent from the Midwest. Speaks with a Midwest accent. Currently in an oscar winning film. Sounds confident and clear."
+    },
+    {
+      "voice": "en-us-tavi",
+      "name": "Tavi",
+      "kind": "character",
+      "gender": "female",
+      "pitch": "high",
+      "accent": "Gulf Coast",
+      "persona": "Advertising Pitch & Commerce / Commercial Voiceover (Fashion Consultant)",
+      "description": "28-year-old Fashion Consultant from the Gulf Coast. Speaks with a Gulf Coast accent. Voice is intimate talkshow."
+    },
+    {
+      "voice": "en-us-tova",
+      "name": "Tova",
+      "kind": "character",
+      "gender": "female",
+      "pitch": "low",
+      "accent": "Northwest",
+      "persona": "High-Trust Advisor / Authoritative Advisor (Lawyer)",
+      "description": "36-year-old Lawyer from the Northwest. Speaks with a Northwest accent. Voice is textured, resonant, and soothing."
+    },
+    {
+      "voice": "en-us-varo",
+      "name": "Varo",
+      "kind": "character",
+      "gender": "male",
+      "pitch": "low",
+      "accent": "Northwest",
+      "persona": "Educational Tutor (Writing Tutor)",
+      "description": "36-year-old Writing Tutor from the Northwest. Speaks with a Northwest accent. Voice is laid-back, encouraging, and chill."
+    },
+    {
+      "voice": "en-us-veda",
+      "name": "Veda",
+      "kind": "character",
+      "gender": "female",
+      "pitch": "high",
+      "accent": "Inland Southern",
+      "persona": "Companion & Peer / Digital Assistant (Radio Host)",
+      "description": "30-year-old Radio Host from the Inland South. Speaks with an Inland Southern accent. Voice is highly approachable."
+    },
+    {
+      "voice": "en-us-zali",
+      "name": "Zali",
+      "kind": "character",
+      "gender": "female",
+      "pitch": "medium",
+      "accent": "Northwest",
+      "persona": "Character & Theatrical (Comedian)",
+      "description": "62-year-old Comedian from the Northwest. Speaks with a Northwest accent. Voice is engaging and empathic."
+    },
+    {
+      "voice": "en-us-zeno",
+      "name": "Zeno",
+      "kind": "character",
+      "gender": "male",
+      "pitch": "high",
+      "accent": "Northwest",
+      "persona": "Character & Theatrical (Reality TV Star)",
+      "description": "27-year-old Reality TV Star from the Northwest. Speaks with a Northwest accent. Voice is cool, confident, and collaborative."
+    },
+    {
+      "voice": "en-us-zuri",
+      "name": "Zuri",
+      "kind": "character",
+      "gender": "female",
+      "pitch": "medium",
+      "accent": "East Coast",
+      "persona": "High-Trust Advisor / Authoritative Advisor (Financial Advisor)",
+      "description": "33-year-old Financial Advisor from the East Coast. Speaks with an East Coast accent. Voice is natural and clear."
+    },
+    {
+      "voice": "Achernar",
+      "name": "Achernar",
+      "kind": "classic",
+      "gender": "female",
+      "pitch": "high",
+      "accent": "General American",
+      "persona": "Storyteller & Narrator",
+      "description": "Soft, calm, and soothing voice with a higher pitch. Recommended for quiet or personal storytelling."
+    },
+    {
+      "voice": "Achird",
+      "name": "Achird",
+      "kind": "classic",
+      "gender": "male",
+      "pitch": "low",
+      "accent": "General American",
+      "persona": "Companion & Peer",
+      "description": "Friendly, approachable, and warm voice with a lower-middle pitch. Recommended for casual walkthroughs or vlogs."
+    },
+    {
+      "voice": "Algenib",
+      "name": "Algenib",
+      "kind": "classic",
+      "gender": "male",
+      "pitch": "low",
+      "accent": "General American",
+      "persona": "Storyteller & Narrator",
+      "description": "Gravelly, grounded, and hard-hitting voice with a low pitch. Recommended for dramatic narration or intense stories."
+    },
+    {
+      "voice": "Algieba",
+      "name": "Algieba",
+      "kind": "classic",
+      "gender": "male",
+      "pitch": "low",
+      "accent": "General American",
+      "persona": "High-Trust Advisor",
+      "description": "Smooth, relaxed, and polished voice with a low pitch. Recommended for corporate videos or polished explainers."
+    },
+    {
+      "voice": "Alnilam",
+      "name": "Alnilam",
+      "kind": "classic",
+      "gender": "male",
+      "pitch": "low",
+      "accent": "General American",
+      "persona": "High-Trust Advisor",
+      "description": "Firm, direct, and commanding voice with a lower-middle pitch. Recommended for authoritative instructions or announcements."
+    },
+    {
+      "voice": "Aoede",
+      "name": "Aoede",
+      "kind": "classic",
+      "gender": "female",
+      "pitch": "medium",
+      "accent": "General American",
+      "persona": "Video Voiceover & Host",
+      "description": "Breezy, light, and relaxed voice with a medium pitch. Recommended for lifestyle or travel vlogs."
+    },
+    {
+      "voice": "Autonoe",
+      "name": "Autonoe",
+      "kind": "classic",
+      "gender": "female",
+      "pitch": "medium",
+      "accent": "General American",
+      "persona": "Advertising Pitch & Commerce",
+      "description": "Bright, positive, and enthusiastic voice with a medium pitch. Recommended for promotions or product feature updates."
+    },
+    {
+      "voice": "Callirrhoe",
+      "name": "Callirrhoe",
+      "kind": "classic",
+      "gender": "female",
+      "pitch": "medium",
+      "accent": "General American",
+      "persona": "Companion & Peer",
+      "description": "Easy-going, relaxed, and casual voice with a medium pitch. Recommended for friendly guides or casual vlogs."
+    },
+    {
+      "voice": "Charon",
+      "name": "Charon",
+      "kind": "classic",
+      "gender": "male",
+      "pitch": "low",
+      "accent": "General American",
+      "persona": "News & Podcast Host",
+      "description": "Informative and steady voice with a low pitch. Recommended for technical explainers or documentaries."
+    },
+    {
+      "voice": "Despina",
+      "name": "Despina",
+      "kind": "classic",
+      "gender": "female",
+      "pitch": "medium",
+      "accent": "General American",
+      "persona": "Educational Tutor",
+      "description": "Smooth, mellow, and polished voice with a medium pitch. Recommended for marketing ads or professional e-learning."
+    },
+    {
+      "voice": "Enceladus",
+      "name": "Enceladus",
+      "kind": "classic",
+      "gender": "male",
+      "pitch": "low",
+      "accent": "General American",
+      "persona": "Storyteller & Narrator",
+      "description": "Breathy, intimate, and soft-spoken voice with a low pitch. Recommended for storytelling or intimate narrations."
+    },
+    {
+      "voice": "Erinome",
+      "name": "Erinome",
+      "kind": "classic",
+      "gender": "female",
+      "pitch": "medium",
+      "accent": "General American",
+      "persona": "Educational Tutor",
+      "description": "Clear, articulate, and precise voice with a medium pitch. Recommended for training walkthroughs or instructions."
+    },
+    {
+      "voice": "Fenrir",
+      "name": "Fenrir",
+      "kind": "classic",
+      "gender": "male",
+      "pitch": "low",
+      "accent": "General American",
+      "persona": "Video Voiceover & Host",
+      "description": "Excitable, high-energy, and passionate voice with a lower-middle pitch. Recommended for sports clips or energetic intros."
+    },
+    {
+      "voice": "Gacrux",
+      "name": "Gacrux",
+      "kind": "classic",
+      "gender": "female",
+      "pitch": "medium",
+      "accent": "General American",
+      "persona": "High-Trust Advisor",
+      "description": "Mature, authoritative, and professional voice with a medium pitch. Recommended for official announcements or serious presentations."
+    },
+    {
+      "voice": "Iapetus",
+      "name": "Iapetus",
+      "kind": "classic",
+      "gender": "male",
+      "pitch": "low",
+      "accent": "General American",
+      "persona": "Tech Support Agent",
+      "description": "Clear, crisp, and articulate voice with a lower-middle pitch. Recommended for help videos or onboarding walkthroughs."
+    },
+    {
+      "voice": "Kore",
+      "name": "Kore",
+      "kind": "classic",
+      "gender": "female",
+      "pitch": "medium",
+      "accent": "General American",
+      "persona": "News & Podcast Host",
+      "description": "Firm, direct, and authoritative voice with a medium pitch. Recommended for news reports or official messages."
+    },
+    {
+      "voice": "Laomedeia",
+      "name": "Laomedeia",
+      "kind": "classic",
+      "gender": "female",
+      "pitch": "high",
+      "accent": "General American",
+      "persona": "Advertising Pitch & Commerce",
+      "description": "Upbeat, energetic, and positive voice with a higher pitch. Recommended for sales pitches or social media marketing."
+    },
+    {
+      "voice": "Leda",
+      "name": "Leda",
+      "kind": "classic",
+      "gender": "female",
+      "pitch": "high",
+      "accent": "General American",
+      "persona": "Video Voiceover & Host",
+      "description": "Youthful, vibrant, and energetic voice with a higher pitch. Recommended for pop culture updates or gaming content."
+    },
+    {
+      "voice": "Orus",
+      "name": "Orus",
+      "kind": "classic",
+      "gender": "male",
+      "pitch": "low",
+      "accent": "General American",
+      "persona": "High-Trust Advisor",
+      "description": "Firm, serious, and no-nonsense voice with a lower-middle pitch. Recommended for project reports or safety readouts."
+    },
+    {
+      "voice": "Puck",
+      "name": "Puck",
+      "kind": "classic",
+      "gender": "male",
+      "pitch": "low",
+      "accent": "General American",
+      "persona": "Podcaster",
+      "description": "Upbeat, energetic, and cheerful voice with a rich, approachable tone. Recommended for podcasts, conversational agents, entertainment reviews, or ads."
+    },
+    {
+      "voice": "Pulcherrima",
+      "name": "Pulcherrima",
+      "kind": "classic",
+      "gender": "neutral",
+      "pitch": "medium",
+      "accent": "General American",
+      "persona": "Customer Support Agent",
+      "description": "Forward, confident, and direct voice with a medium pitch. Recommended for sales calls or direct prompts."
+    },
+    {
+      "voice": "Rasalgethi",
+      "name": "Rasalgethi",
+      "kind": "classic",
+      "gender": "male",
+      "pitch": "medium",
+      "accent": "General American",
+      "persona": "Educational Tutor",
+      "description": "Informative and measured voice with a medium pitch. Recommended for history lectures or audiobooks."
+    },
+    {
+      "voice": "Sadachbia",
+      "name": "Sadachbia",
+      "kind": "classic",
+      "gender": "male",
+      "pitch": "low",
+      "accent": "General American",
+      "persona": "News & Podcast Host",
+      "description": "Lively, animated, and engaging voice with a low pitch. Recommended for daily digests or podcasts."
+    },
+    {
+      "voice": "Sadaltager",
+      "name": "Sadaltager",
+      "kind": "classic",
+      "gender": "male",
+      "pitch": "medium",
+      "accent": "General American",
+      "persona": "Educational Tutor",
+      "description": "Knowledgeable and steady voice with a medium pitch. Recommended for scientific explanations or deep dives."
+    },
+    {
+      "voice": "Schedar",
+      "name": "Schedar",
+      "kind": "classic",
+      "gender": "male",
+      "pitch": "low",
+      "accent": "General American",
+      "persona": "Tech Support Agent",
+      "description": "Even, balanced, and steady voice with a lower-middle pitch. Recommended for neutral scripts or documentation readouts."
+    },
+    {
+      "voice": "Sulafat",
+      "name": "Sulafat",
+      "kind": "classic",
+      "gender": "female",
+      "pitch": "medium",
+      "accent": "General American",
+      "persona": "Customer Support Agent",
+      "description": "Warm, inviting, and comforting voice with a medium pitch. Recommended for onboarding screens or warm welcomes."
+    },
+    {
+      "voice": "Umbriel",
+      "name": "Umbriel",
+      "kind": "classic",
+      "gender": "male",
+      "pitch": "low",
+      "accent": "General American",
+      "persona": "Companion & Peer",
+      "description": "Easy-going, laid-back, and casual voice with a lower-middle pitch. Recommended for reviews or casual explainers."
+    },
+    {
+      "voice": "Vindemiatrix",
+      "name": "Vindemiatrix",
+      "kind": "classic",
+      "gender": "female",
+      "pitch": "medium",
+      "accent": "General American",
+      "persona": "Coach & Motivational Guide",
+      "description": "Gentle, mild, and calming voice with a medium pitch. Recommended for kids content or meditation videos."
+    },
+    {
+      "voice": "Zephyr",
+      "name": "Zephyr",
+      "kind": "classic",
+      "gender": "female",
+      "pitch": "high",
+      "accent": "General American",
+      "persona": "Advertising Pitch & Commerce",
+      "description": "Bright, positive, and forward-looking voice with a higher pitch. Recommended for showreels or product announcements."
+    },
+    {
+      "voice": "Zubenelgenubi",
+      "name": "Zubenelgenubi",
+      "kind": "classic",
+      "gender": "male",
+      "pitch": "low",
+      "accent": "General American",
+      "persona": "Companion & Peer",
+      "description": "Casual, conversational, and laid-back voice with a lower-middle pitch. Recommended for startup updates or casual pitches."
+    }
+  ]
+}
