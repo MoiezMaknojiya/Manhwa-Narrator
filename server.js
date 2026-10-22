@@ -558,21 +558,6 @@ app.get('/projects/:pid/chapters/:cid/crops/one/:index/:k.jpg', async (req, res)
   } catch (err) { res.status(500).send(err.message); }
 });
 
-// All crops (selected images) as ZIP → 01a.jpg, 01b.jpg, 02a.jpg …
-app.get('/projects/:pid/chapters/:cid/crops/download.zip', async (req, res) => {
-  const { pid, cid } = req.params;
-  const project = store.getProject(pid);
-  const chapter = store.getChapter(pid, cid);
-  if (!project || !chapter) return res.status(404).send('Not found');
-  const items = listSavedCrops(pid, cid, chapter, parseIndexes(req.query.images));
-  if (!items.length) return res.status(404).send('No crops saved for the selected images');
-  const entries = [];
-  for (const it of items) entries.push({ name: `${it.name}.jpg`, data: await crops.renderCrop(it.path, it.rect) });
-  res.setHeader('Content-Type', 'application/zip');
-  res.setHeader('Content-Disposition', `attachment; filename="${safeName(project.name)} - ${safeName(chapter.title)} - crops.zip"`);
-  res.send(zipStore(entries));
-});
-
 // Write crops straight into a folder on this PC (CapCut import ke liye) — body { folder, images: "1,2,3" }
 app.post('/projects/:pid/chapters/:cid/crops/export', async (req, res) => {
   const { pid, cid } = req.params;

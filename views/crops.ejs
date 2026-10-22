@@ -19,22 +19,17 @@
       </select>
     </label>
     <span class="save-state muted small-note" id="saveState" aria-live="polite">Saved</span>
-    <button class="btn" id="zipBtn" type="button" title="Download the crops of the checked images as a ZIP (01a.jpg, 01b.jpg …)">
-      <i class="ic ic-download" aria-hidden="true"></i>
-      Download ZIP <span class="count-chip" id="zipCount">0</span>
-    </button>
-    <button class="btn primary" id="exportBtn" type="button" title="Write the crops straight into a folder on this PC (for CapCut)">
+    <button class="btn primary" id="exportBtn" type="button" title="Write the crops of the checked images into the folder below (for CapCut) — opens the folder window if no folder is set yet">
       <i class="ic ic-folder" aria-hidden="true"></i>
-      Export to folder
+      Export to folder <span class="count-chip" id="exportCount">0</span>
     </button>
   </div>
 </section>
 
-<div class="export-bar hidden" id="exportBar">
+<div class="export-bar" id="exportBar">
   <label class="export-field"><span>Folder on this PC</span><input type="text" id="exportFolder" value="<%= folder %>" spellcheck="false" placeholder="C:\Users\you\Desktop\crops" /></label>
   <button class="btn small" id="browseBtn" type="button" title="Pick a folder in a Windows window — the files are written as soon as you choose it"><i class="ic ic-folder" aria-hidden="true"></i>Browse…</button>
   <button class="btn primary small" id="exportGo" type="button" title="Write the crops into the folder typed above"><i class="ic ic-save" aria-hidden="true"></i>Write files</button>
-  <button class="btn small" id="exportCancel" type="button">Cancel</button>
   <span class="muted small-note" id="exportStatus" aria-live="polite"></span>
   <button class="btn small hidden" id="openFolderBtn" type="button" title="Show the folder in Explorer"><i class="ic ic-external-link" aria-hidden="true"></i>Open folder</button>
 </div>
@@ -160,9 +155,9 @@
     const total = IMAGES.reduce((a, im) => a + im.crops.length, 0);
     const withCrops = IMAGES.filter((im) => im.crops.length).length;
     $('listSummary').textContent = `${total} crop${total === 1 ? '' : 's'} on ${withCrops}/${IMAGES.length} images`;
-    const zipN = IMAGES.filter((im) => state.checked.has(im.index)).reduce((a, im) => a + im.crops.length, 0);
-    $('zipCount').textContent = zipN;
-    $('zipBtn').disabled = !zipN; $('exportBtn').disabled = !zipN;
+    const exportN = exportCount();
+    $('exportCount').textContent = exportN;
+    $('exportBtn').disabled = !exportN; $('exportGo').disabled = !exportN; $('browseBtn').disabled = !exportN;
   }
   $('cropRows').addEventListener('click', (e) => {
     const b = e.target.closest('.row-main'); if (b) openImage(parseInt(b.dataset.i, 10));
@@ -320,11 +315,11 @@
 
   // ---------- download / export ----------
   const selectedParam = () => [...state.checked].sort((a, b) => a - b).join(',');
-  $('zipBtn').addEventListener('click', async () => { clearTimeout(saveTimer); await save(); if (state.dirty) return toast('Could not save — fix the error first', 'err'); window.location.href = `${base}/download.zip?images=${selectedParam()}`; });
-  $('exportBtn').addEventListener('click', () => { $('exportBar').classList.toggle('hidden'); if (!$('exportBar').classList.contains('hidden')) $('browseBtn').focus(); });
-  $('exportCancel').addEventListener('click', () => $('exportBar').classList.add('hidden'));
+  function exportCount() { return IMAGES.filter((im) => state.checked.has(im.index)).reduce((a, im) => a + im.crops.length, 0); }
+  // Hero button: folder already set → write files right away; otherwise open the folder window
+  $('exportBtn').addEventListener('click', () => { if ($('exportFolder').value.trim()) writeFiles(); else $('browseBtn').click(); });
   const setExportStatus = (msg, cls) => { const st = $('exportStatus'); st.textContent = msg; st.className = 'small-note ' + (cls || 'muted'); };
-  const exportBusy = (on) => { $('exportGo').disabled = on; $('browseBtn').disabled = on; };
+  const exportBusy = (on) => { const none = !exportCount(); $('exportGo').disabled = on || none; $('browseBtn').disabled = on || none; $('exportBtn').disabled = on || none; };
   async function writeFiles() {
     clearTimeout(saveTimer); await save(); if (state.dirty) { toast('Could not save — fix the error first', 'err'); return false; }
     const folder = $('exportFolder').value.trim();
