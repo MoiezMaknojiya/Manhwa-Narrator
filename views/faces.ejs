@@ -9,7 +9,7 @@
       <span><%= character.name %></span>
     </p>
     <h1><i class="ic ic-user" aria-hidden="true"></i>Face references — <%= character.name %></h1>
-    <p class="muted small-note">Pick 1–<%= maxFaces %> clear shots of this character's face (front or 3/4 view, no hand or speech bubble over it). Gemini gets these little crops with every generate and matches faces against them, so a new outfit, angle or age-styling no longer confuses it.</p>
+    <p class="muted small-note">Pick 1–<%= maxFaces %> clear shots of this character's face (front or 3/4 view, no hand or speech bubble over it). Gemini gets these little crops with every generate and matches faces against them, so a new outfit, angle or age-styling no longer confuses it. Generate also saves faces by itself (tagged <strong>auto</strong>) until a character has <%= maxFaces %> — delete any that look wrong and the next generate fills the slot again.</p>
   </div>
   <div class="page-actions">
     <a class="btn" href="/projects/<%= project.id %>#characters"><i class="ic ic-undo" aria-hidden="true"></i>Back to roster</a>
@@ -25,6 +25,7 @@
     <% faces.forEach(function (f) { %>
       <div class="face-card" data-id="<%= f.id %>">
         <img src="/faces/<%= project.id %>/<%= character.id %>/<%= f.id %>.jpg" alt="Reference face of <%= character.name %>" />
+        <% if (f.source === 'ai') { %><span class="face-badge" title="Picked automatically by Gemini during Generate">auto</span><% } %>
         <button type="button" class="face-del" data-id="<%= f.id %>" aria-label="Delete this reference" title="Delete"><i class="ic ic-x" aria-hidden="true"></i></button>
       </div>
     <% }) %>

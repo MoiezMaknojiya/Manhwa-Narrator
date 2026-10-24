@@ -27,7 +27,7 @@
     <label>
       <span>Script model</span>
       <select name="model" id="modelSelect">
-        <% const modelLabels = { 'gemini-3.8-flash': ' — recommended (FREE)', 'gemini-2.5-flash': ' — backup (FREE)' }; %>
+        <% const modelLabels = { 'gemini-3.8-flash': ' — recommended (FREE)', 'gemini-3.7-flash': ' — backup (FREE)' }; %>
         <% const models = Object.keys(modelLabels); %>
         <% models.forEach(function (m) { %>
           <option value="<%= m %>" <%= settings.model === m ? 'selected' : '' %>><%= m %><%= modelLabels[m] %></option>

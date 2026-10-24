@@ -236,6 +236,7 @@ function buildRosterBlock(characters, { chapterOrder = Infinity, orderOf = () =>
 const EXTRACT_INSTRUCTION =
   `\n\nAPP INSTRUCTION (not part of the script): After the script is fully finished, write "${CHAR_MARKER}" alone on a new line, followed by a JSON array (ENGLISH only, no extra text) with EVERY person who is NAMED or speaks in the STORY panels of this chapter — minor named characters too, so their spelling is fixed for later chapters. EXCLUDE cover/title art, character cards, next-chapter previews, recap pages, credits / translator / scanlation pages, TL notes, mascots and advertisements: take no names or looks from those pages.\n` +
   `Each entry: {"name": "the exact ROSTER name if this is a roster character (even in a new outfit, older, or called by a nickname/title); otherwise the name exactly as this chapter spells it; for an UNNAMED person a short English descriptor like 'masked assassin' — never a kinship word alone ('mother'), never an invented name", "unnamed": true or false, "confidence": "sure" or "guess" (guess = face hidden or identity only inferred), "seen": "shown" or "mentioned" (mentioned = only talked about, not on panel), "sameAs": "roster name ONLY when a roster character is now called by a different name in the story (adoption, fake identity, new title), else empty", "titles": "epithets, titles or nicknames used for this person in this chapter, comma-separated (e.g. Sword Saint), else empty", "look": "PERMANENT features only — face, hair colour and style, eye colour, scars or marks, build, approximate age. NO clothes, jewellery, weapons, expressions, moods, blood, mud or tears", "outfit": "clothes, armour, accessories and weapon in THIS chapter (short)", "role": "hero / villain / side", "status": "alive or dead — only if this chapter shows it, else empty", "relationships": "ties revealed in THIS chapter, using FULL roster names only and no pronouns, e.g. mother of <full name>; wife of <full name>"}\n` +
+  `FACE BOX: add "face": {"image": n, "part": p, "box": [ymin, xmin, ymax, xmax]} to an entry ONLY when that person is "sure" and "shown" and the FACE BOX list (below) asks for them: pick the single clearest, largest, unobstructed view of this character's FACE in this chapter (front or 3/4 view, eyes visible, no hand, weapon, speech bubble or hair covering it, not a chibi/comedy panel), give the IMAGE number, the part number exactly as labelled ("part p of q"; 1 when the image has no parts) and the box in 0-1000 coordinates of THAT part as [ymin, xmin, ymax, xmax] covering just the head. Otherwise "face": null.\n` +
   `Then write "${SOURCE_MARKER}" alone on a new line, followed by one JSON object (ENGLISH): {"watermarks": ["every website name, URL, logo banner or scanlation-group credit visible anywhere in the images, e.g. example.net"], "notes": "one short line about the source if relevant, else empty"}. Use an empty array if no such text is visible.`;
 
 // Reference faces ka intro — roster ke baad, chapter images se pehle (lib/gemini.js refParts)
@@ -303,12 +304,15 @@ app.post('/projects/:pid/chapters/:cid/generate', async (req, res) => {
       imgs.forEach((data, k) => { refParts.push({ text: `\nREFERENCE FACE ${k + 1} of ${imgs.length} — this is ${c.name}:` }); refParts.push({ inlineData: { mimeType: 'image/jpeg', data } }); });
     }
     if (refParts.length) refParts.unshift({ text: FACE_REFS_INTRO });
+    // Jin roster characters ke 3 se kam references hain (aur har NAYA character) unka face box maango
+    const needFaces = roster.filter((c) => !c.pending && (facesMap[c.id] || []).length < store.MAX_FACES).map((c) => c.name);
+    const faceAskBlock = `\nFACE BOX list: give "face" for every NEW (non-roster) named character and for these roster characters: ${needFaces.length ? needFaces.join(', ') : '(none)'}. Everyone else: "face": null.`;
     const addon = settings.commentaryMode === 'on' ? getCommentaryAddon() : '';
     const notesBlock = (chapter.notes || '').trim()
       ? `\n\nEDITOR NOTES FOR THIS CHAPTER ONLY (apply here, not a permanent rule): ${chapter.notes.trim().slice(0, 1500)}`
       : '';
     const finalPrompt = settings.prompt + addon + buildProjectBlock(project, chapter, chapterIndex, project.chapters.length) +
-      buildRosterBlock(roster, { chapterOrder: chapterIndex, orderOf, withFaces }) + notesBlock + EXTRACT_INSTRUCTION;
+      buildRosterBlock(roster, { chapterOrder: chapterIndex, orderOf, withFaces }) + notesBlock + EXTRACT_INSTRUCTION + faceAskBlock;
     const imagePaths = chapter.images.map((img) => path.join(UPLOADS_DIR, pid, cid, img.file)); // file ke naam model ko nahi jaate
     const result = await generateNarration({
       keys: settings.keys,
@@ -365,6 +369,25 @@ app.post('/projects/:pid/chapters/:cid/generate', async (req, res) => {
       warnings.push('Roster update failed: ' + err.message);
     }
     flags.roster = { pending: mergeResult.pending, ambiguous: mergeResult.ambiguous, conflicts: mergeResult.conflicts, skipped: mergeResult.skipped, learned: mergeResult.learned };
+    // Auto face references: Gemini ke face boxes → crop → save (source 'ai'); sirf sure+shown, roster row mile, 3 se kam ho
+    const autoFaces = [];
+    try {
+      const rosterNow = store.listCharacters(pid).filter((c) => !c.pending);
+      const facesNow = store.facesByCharacter(pid);
+      for (const d of parsed.detected || []) {
+        if (!d || !d.face || d.unnamed || d.guess || d.confidence === 'guess' || d.seen === 'mentioned') continue;
+        const r = N.matchCharacterDetailed(rosterNow, d.sameAs || d.name);
+        if (!r.match || (facesNow[r.match.id] || []).length >= store.MAX_FACES) continue;
+        const rect = crops.faceRectFromBox(d.face, result.imageLayouts || []);
+        if (!rect) continue;
+        const img = chapter.images[rect.imageIndex];
+        if (!img) continue;
+        const { rect: sq, buffer } = await crops.renderSquare(path.join(UPLOADS_DIR, pid, cid, img.file), rect, 256);
+        const out = store.addFace(pid, r.match.id, buffer, { chapterId: cid, file: img.file, rect: sq, source: 'ai' });
+        if (out.face) { (facesNow[r.match.id] = facesNow[r.match.id] || []).push(out.face); autoFaces.push(`${r.match.name} (image ${rect.imageIndex + 1})`); }
+      }
+    } catch (err) { warnings.push('Auto face references failed: ' + err.message); }
+    flags.faceRefs = { ...(flags.faceRefs || {}), autoAdded: autoFaces };
     store.updateChapter(pid, cid, { flags });
     return {
       ok: true,
