@@ -88,12 +88,14 @@
     </form>
   <% } %>
 
-  <p class="muted small-note" style="margin-bottom:10px">How recognition works: <strong>Appearance</strong> = permanent features only · <strong>Aliases</strong> = other spellings/titles the app will map to this name (auto-learned from scripts) · <strong>Notes</strong> = how to tell them apart from look-alikes · <strong>Say as</strong> = how the voice should pronounce the name. Renaming keeps the old spelling as an alias automatically. Removing a character also stops Gemini from re-adding that name.</p>
+  <p class="muted small-note" style="margin-bottom:10px">How recognition works: <strong>Appearance</strong> = permanent features only · <strong>Aliases</strong> = other spellings/titles the app will map to this name (auto-learned from scripts) · <strong>Notes</strong> = how to tell them apart from look-alikes · <strong>Say as</strong> = how the voice should pronounce the name · <strong>Face references</strong> = cropped faces Gemini compares every panel against (the strongest cue — add 1–3 per main character). Renaming keeps the old spelling as an alias automatically. Removing a character also stops Gemini from re-adding that name.</p>
 
   <div class="char-list">
     <% project.characters.forEach(function (ch) { %>
       <details class="char-item <%= ch.pending ? 'pending' : '' %>">
+        <% const fl = (typeof faces !== 'undefined' && faces[ch.id]) || []; %>
         <summary>
+          <% if (fl.length) { %><img class="char-avatar" src="/faces/<%= project.id %>/<%= ch.id %>/<%= fl[0].id %>.jpg" alt="" /><% } %>
           <span class="char-name"><%= ch.name %></span>
           <% if (ch.role) { %><span class="badge char-role <%= ch.role.toLowerCase() %>"><%= ch.role %></span><% } %>
           <% if (ch.status && ch.status !== 'alive') { %><span class="badge char-status"><%= ch.status %></span><% } %>
@@ -125,6 +127,13 @@
           <label><span>Say as <span class="muted">(voice pronunciation, optional)</span></span><input type="text" name="pronounce" value="<%= ch.pronounce || '' %>" placeholder="Yong-ryong" /></label>
           <label class="char-wide"><span>Outfits seen <span class="muted">(auto-added per chapter — clothes change, the character doesn't)</span></span><input type="text" name="outfits" value="<%= ch.outfits || '' %>" placeholder="Chapter 1: green-blue martial robes; Chapter 4: black cloak" /></label>
           <label class="char-wide"><span>Relationships <span class="muted">(used as "… ki ammi", "uska beta"; "Chapter N:" tag = revealed there, hidden when regenerating earlier chapters)</span></span><input type="text" name="relationships" value="<%= ch.relationships %>" placeholder="Chapter 1: mother of …; Chapter 5: daughter of …" /></label>
+          <div class="char-faces char-wide">
+            <span class="char-faces-label">Face references <span class="muted">(1–3 clear face crops — Gemini matches faces against these, so a new outfit or angle doesn't confuse it)</span></span>
+            <div class="char-faces-row">
+              <% fl.forEach(function (f) { %><img class="face-thumb" src="/faces/<%= project.id %>/<%= ch.id %>/<%= f.id %>.jpg" alt="Reference face of <%= ch.name %>" /><% }) %>
+              <a class="btn small" href="/projects/<%= project.id %>/characters/<%= ch.id %>/faces"><i class="ic ic-user" aria-hidden="true"></i><%= fl.length ? 'Manage faces (' + fl.length + '/3)' : 'Add face reference' %></a>
+            </div>
+          </div>
           <div class="actions">
             <button type="submit" class="btn primary small"><i class="ic ic-save" aria-hidden="true"></i>Save</button>
             <button type="submit" class="btn ghost-danger small" formaction="/projects/<%= project.id %>/characters/<%= ch.id %>/delete" formnovalidate data-confirm="Remove <%= ch.name %> from the roster? Gemini will not re-add this name." data-confirm-title="Remove character" data-confirm-text="Remove"><i class="ic ic-trash" aria-hidden="true"></i>Remove</button>

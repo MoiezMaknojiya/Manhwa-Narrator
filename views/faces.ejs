@@ -1,0 +1,181 @@
+<%- include('partials/head', { title: 'Face references — ' + character.name }) %>
+
+<section class="hero">
+  <div>
+    <p class="crumbs">
+      <a href="/">Projects</a> <span class="crumb-sep">/</span>
+      <a href="/projects/<%= project.id %>"><%= project.name %></a> <span class="crumb-sep">/</span>
+      <a href="/projects/<%= project.id %>#characters">Characters</a> <span class="crumb-sep">/</span>
+      <span><%= character.name %></span>
+    </p>
+    <h1><i class="ic ic-user" aria-hidden="true"></i>Face references — <%= character.name %></h1>
+    <p class="muted small-note">Pick 1–<%= maxFaces %> clear shots of this character's face (front or 3/4 view, no hand or speech bubble over it). Gemini gets these little crops with every generate and matches faces against them, so a new outfit, angle or age-styling no longer confuses it.</p>
+  </div>
+  <div class="page-actions">
+    <a class="btn" href="/projects/<%= project.id %>#characters"><i class="ic ic-undo" aria-hidden="true"></i>Back to roster</a>
+  </div>
+</section>
+
+<section class="card faces-saved-card">
+  <div class="card-head">
+    <h2><i class="ic ic-check-circle" aria-hidden="true"></i>Saved references <span class="count-chip" id="faceCount"><%= faces.length %>/<%= maxFaces %></span></h2>
+    <span class="muted small-note" id="faceStatus" aria-live="polite"></span>
+  </div>
+  <div class="faces-saved" id="facesSaved">
+    <% faces.forEach(function (f) { %>
+      <div class="face-card" data-id="<%= f.id %>">
+        <img src="/faces/<%= project.id %>/<%= character.id %>/<%= f.id %>.jpg" alt="Reference face of <%= character.name %>" />
+        <button type="button" class="face-del" data-id="<%= f.id %>" aria-label="Delete this reference" title="Delete"><i class="ic ic-x" aria-hidden="true"></i></button>
+      </div>
+    <% }) %>
+    <p class="muted small-note face-empty <%= faces.length ? 'hidden' : '' %>" id="faceEmpty">None yet — draw a box around the face below and press <strong>Save this face</strong>.</p>
+  </div>
+</section>
+
+<% if (!chapter || !images.length) { %>
+  <div class="empty-state"><i class="ic ic-image empty-icon" aria-hidden="true"></i><p>No chapter images yet — <a href="/projects/<%= project.id %>">upload a chapter</a> first, then come back to pick the face.</p></div>
+<% } else { %>
+<div class="faces-layout">
+  <aside class="card crop-list" aria-label="Images">
+    <label class="faces-chapter"><span class="muted small-note">Chapter</span>
+      <select id="chapterSel" aria-label="Chapter">
+        <% chapters.forEach(function (c) { %><option value="<%= c.id %>" <%= c.id === chapter.id ? 'selected' : '' %>><%= c.title %> (<%= c.images.length %>)</option><% }) %>
+      </select>
+    </label>
+    <div class="img-strip" id="imgStrip" role="list"></div>
+  </aside>
+
+  <main class="card crop-stage-card">
+    <div class="stage-toolbar">
+      <div class="stage-title"><strong id="stageTitle">Image 1</strong> <span class="muted small-note" id="stageMeta"></span></div>
+      <div class="stage-tools">
+        <button class="btn primary small" id="saveFaceBtn" type="button" <%= faces.length >= maxFaces ? 'disabled' : '' %>><i class="ic ic-save" aria-hidden="true"></i>Save this face</button>
+        <span class="muted small-note stage-hint">Drag the green box onto the face · drag an edge to resize · arrows move, Alt+arrows resize · PageUp/PageDown switch image · double-click to jump the box there</span>
+      </div>
+    </div>
+    <div class="stage-scroll" id="stageScroll" tabindex="0" aria-label="Image with the face box">
+      <div class="stage" id="stage">
+        <img id="stageImg" alt="" draggable="false" />
+        <div class="overlay" id="overlay">
+          <div class="crop-box face-box" id="faceBox" tabindex="0" role="group" aria-label="Face box">
+            <span class="crop-label" id="faceLabel">face</span>
+            <i class="h h-n" data-h="n"></i><i class="h h-s" data-h="s"></i><i class="h h-w" data-h="w"></i><i class="h h-e" data-h="e"></i>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+<% } %>
+
+<script>
+(function () {
+  const IMAGES = <%- JSON.stringify(images).replace(/</g, '\\u003c') %>;
+  const PID = '<%= project.id %>', CHID = '<%= character.id %>', CHAPTER = '<%= chapter ? chapter.id : '' %>';
+  const MAX = <%= maxFaces %>;
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const base = `/projects/${PID}/characters/${CHID}/faces`;
+
+  // ---- saved list (delete) ----
+  let count = <%= faces.length %>;
+  const setCount = (n) => { count = n; $('faceCount').textContent = `${n}/${MAX}`; $('faceEmpty').classList.toggle('hidden', n > 0); if ($('saveFaceBtn')) $('saveFaceBtn').disabled = n >= MAX; };
+  $('facesSaved').addEventListener('click', async (e) => {
+    const b = e.target.closest('.face-del'); if (!b) return;
+    if (!(await confirmDialog('Delete this reference face?', { title: 'Delete reference', confirmText: 'Delete' }))) return;
+    try {
+      const res = await fetch(`${base}/${b.dataset.id}/delete`, { method: 'POST' }); const d = await res.json();
+      if (!d.ok) throw new Error(d.error || 'Could not delete');
+      b.closest('.face-card').remove(); setCount(d.count); toast('Reference deleted', 'done');
+    } catch (err) { toast(err.message, 'err'); }
+  });
+  const chapterSel = $('chapterSel');
+  if (chapterSel) chapterSel.addEventListener('change', () => { location.href = `${base}?chapter=${encodeURIComponent(chapterSel.value)}`; });
+  if (!IMAGES.length) return;
+
+  // ---- stage ----
+  const STAGE_W = 620;
+  const state = { cur: 0, box: { x: 0, y: 0, s: 200 } };
+  const img = () => IMAGES[state.cur];
+  const scaleOf = (im) => STAGE_W / im.width;
+  const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+  function renderStrip() {
+    $('imgStrip').innerHTML = IMAGES.map((im, i) => `<button type="button" class="${i === state.cur ? 'active' : ''}" data-i="${i}" role="listitem"><img src="${esc(im.url)}" alt="" loading="lazy" /><span>#${String(im.index).padStart(2, '0')} <span class="muted">${im.width}×${im.height}</span></span></button>`).join('');
+  }
+  $('imgStrip').addEventListener('click', (e) => { const b = e.target.closest('button[data-i]'); if (b) openImage(parseInt(b.dataset.i, 10)); });
+  function openImage(i) {
+    state.cur = clamp(i, 0, IMAGES.length - 1);
+    const im = img(), s = scaleOf(im);
+    $('stageTitle').textContent = `Image ${im.index}`; $('stageMeta').textContent = `${im.width}×${im.height}`;
+    $('stageImg').src = im.url; $('stageImg').style.width = STAGE_W + 'px'; $('stageImg').style.height = Math.round(im.height * s) + 'px';
+    $('stage').style.width = STAGE_W + 'px'; $('stage').style.height = Math.round(im.height * s) + 'px';
+    const side = Math.min(220, Math.round(im.width * 0.35));
+    state.box = { x: Math.round((im.width - side) / 2), y: Math.round((Math.min(im.height, 900) - side) / 2), s: side };
+    $('stageScroll').scrollTop = 0;
+    renderStrip(); renderBox();
+    const active = $('imgStrip').querySelector('button.active'); if (active) active.scrollIntoView({ block: 'nearest' });
+  }
+  function fixBox() {
+    const im = img(), b = state.box;
+    b.s = clamp(Math.round(b.s), 32, Math.min(im.width, im.height));
+    b.x = clamp(Math.round(b.x), 0, im.width - b.s); b.y = clamp(Math.round(b.y), 0, im.height - b.s);
+  }
+  function renderBox() {
+    fixBox();
+    const im = img(), s = scaleOf(im), b = state.box, el = $('faceBox');
+    el.style.left = b.x * s + 'px'; el.style.top = b.y * s + 'px'; el.style.width = b.s * s + 'px'; el.style.height = b.s * s + 'px';
+    $('faceLabel').textContent = `face · ${b.s}×${b.s}`;
+  }
+  $('stage').addEventListener('dblclick', (e) => {
+    const im = img(), s = scaleOf(im), rect = $('stage').getBoundingClientRect();
+    state.box.x = (e.clientX - rect.left) / s - state.box.s / 2; state.box.y = (e.clientY - rect.top) / s - state.box.s / 2; renderBox();
+  });
+  // drag / resize (square)
+  let drag = null;
+  $('faceBox').addEventListener('pointerdown', (e) => {
+    const im = img();
+    drag = { mode: e.target.closest('.h') ? e.target.dataset.h : 'move', startX: e.clientX, startY: e.clientY, o: { ...state.box }, s: scaleOf(im) };
+    e.preventDefault();
+  });
+  document.addEventListener('pointermove', (e) => {
+    if (!drag) return;
+    const { o, s, mode } = drag, dx = (e.clientX - drag.startX) / s, dy = (e.clientY - drag.startY) / s, b = state.box;
+    if (mode === 'move') { b.x = o.x + dx; b.y = o.y + dy; }
+    else if (mode === 's') b.s = o.s + dy;
+    else if (mode === 'e') b.s = o.s + dx;
+    else if (mode === 'n') { b.s = o.s - dy; b.y = o.y + o.s - b.s; }
+    else if (mode === 'w') { b.s = o.s - dx; b.x = o.x + o.s - b.s; }
+    renderBox();
+  });
+  document.addEventListener('pointerup', () => { drag = null; });
+  document.addEventListener('keydown', (e) => {
+    if (['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement.tagName)) return;
+    const step = e.shiftKey ? 40 : 10, b = state.box;
+    if (e.key === 'PageDown') { openImage(state.cur + 1); e.preventDefault(); return; }
+    if (e.key === 'PageUp') { openImage(state.cur - 1); e.preventDefault(); return; }
+    if (e.key === 'ArrowUp') { if (e.altKey) b.s -= step; else b.y -= step; }
+    else if (e.key === 'ArrowDown') { if (e.altKey) b.s += step; else b.y += step; }
+    else if (e.key === 'ArrowLeft') b.x -= step;
+    else if (e.key === 'ArrowRight') b.x += step;
+    else return;
+    renderBox(); e.preventDefault();
+  });
+  // save
+  $('saveFaceBtn').addEventListener('click', async () => {
+    const btn = $('saveFaceBtn'); btn.disabled = true; btn.classList.add('loading'); $('faceStatus').textContent = 'Saving…';
+    try {
+      const im = img(), b = state.box;
+      const res = await fetch(base, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ chapterId: CHAPTER, file: im.file, rect: { x: b.x, y: b.y, w: b.s, h: b.s } }) });
+      const d = await res.json(); if (!d.ok) throw new Error(d.error || 'Could not save');
+      const card = document.createElement('div'); card.className = 'face-card'; card.dataset.id = d.face.id;
+      card.innerHTML = `<img src="${esc(d.face.url)}?t=${Date.now()}" alt="Reference face" /><button type="button" class="face-del" data-id="${esc(d.face.id)}" aria-label="Delete this reference" title="Delete"><i class="ic ic-x" aria-hidden="true"></i></button>`;
+      $('facesSaved').insertBefore(card, $('faceEmpty'));
+      setCount(d.count); $('faceStatus').textContent = ''; toast('Face reference saved', 'done');
+    } catch (err) { $('faceStatus').textContent = err.message; toast(err.message, 'err'); }
+    finally { btn.classList.remove('loading'); btn.disabled = count >= MAX; }
+  });
+  openImage(0);
+})();
+</script>
+
+<%- include('partials/foot') %>

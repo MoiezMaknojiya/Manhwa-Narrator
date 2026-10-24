@@ -37,6 +37,7 @@ app.use(express.json());
 app.use('/public', express.static(path.join(__dirname, 'public')));
 app.use('/uploads', express.static(UPLOADS_DIR));
 app.use('/output', express.static(OUTPUT_DIR));
+app.use('/faces', express.static(store.FACES_DIR)); // reference face crops (data/faces)
 
 // Projects list + current path for the sidebar (every page)
 app.use((req, res, next) => {
@@ -103,6 +104,7 @@ app.get('/projects/:pid', (req, res) => {
     project,
     otherProjects: store.listProjects().filter((p) => p.id !== project.id), // roster copy ke liye (sequel/season 2)
     rosterMsg: req.query.msg || '',
+    faces: store.facesByCharacter(project.id),
   });
 });
 
@@ -199,7 +201,7 @@ function buildProjectBlock(project, chapter, index, total) {
  * Roster block — chapter-scoped: baad ke chapters mein pehli baar aaye characters, aur "Chapter N:" tagged rishte/kapde jo is chapter
  * ke baad reveal hue, is prompt mein NAHI jaate (purana chapter regenerate karo toh spoiler nahi). pending (unnamed/guess) rows bhi nahi.
  */
-function buildRosterBlock(characters, { chapterOrder = Infinity, orderOf = () => null } = {}) {
+function buildRosterBlock(characters, { chapterOrder = Infinity, orderOf = () => null, withFaces = new Set() } = {}) {
   const roster = characters.filter((c) => !c.pending);
   const RULES =
     '\n\nCHARACTER ROSTER — use EXACTLY these names in the script (the bullet spelling is the correct one, even if this chapter\'s translation or a relationships note spells it differently).\n' +
@@ -221,6 +223,7 @@ function buildRosterBlock(characters, { chapterOrder = Infinity, orderOf = () =>
     if (c.look) line += ` — permanent appearance: ${c.look}`;
     else line += ' — appearance: not yet shown clearly (recognise only by name/context, never by looks)';
     if (c.notes) line += ` — how to tell apart: ${c.notes}`;
+    if (withFaces.has(c.id)) line += ' — FACE REFERENCE images provided below (match the face against them)';
     const outfits = N.clausesUpTo(c.outfits, chapterOrder, orderOf);
     if (outfits) line += ` — clothes seen so far (NOT a recognition cue, they change): ${outfits}`;
     const rel = N.clausesUpTo(c.relationships, chapterOrder, orderOf);
@@ -234,6 +237,12 @@ const EXTRACT_INSTRUCTION =
   `\n\nAPP INSTRUCTION (not part of the script): After the script is fully finished, write "${CHAR_MARKER}" alone on a new line, followed by a JSON array (ENGLISH only, no extra text) with EVERY person who is NAMED or speaks in the STORY panels of this chapter — minor named characters too, so their spelling is fixed for later chapters. EXCLUDE cover/title art, character cards, next-chapter previews, recap pages, credits / translator / scanlation pages, TL notes, mascots and advertisements: take no names or looks from those pages.\n` +
   `Each entry: {"name": "the exact ROSTER name if this is a roster character (even in a new outfit, older, or called by a nickname/title); otherwise the name exactly as this chapter spells it; for an UNNAMED person a short English descriptor like 'masked assassin' — never a kinship word alone ('mother'), never an invented name", "unnamed": true or false, "confidence": "sure" or "guess" (guess = face hidden or identity only inferred), "seen": "shown" or "mentioned" (mentioned = only talked about, not on panel), "sameAs": "roster name ONLY when a roster character is now called by a different name in the story (adoption, fake identity, new title), else empty", "titles": "epithets, titles or nicknames used for this person in this chapter, comma-separated (e.g. Sword Saint), else empty", "look": "PERMANENT features only — face, hair colour and style, eye colour, scars or marks, build, approximate age. NO clothes, jewellery, weapons, expressions, moods, blood, mud or tears", "outfit": "clothes, armour, accessories and weapon in THIS chapter (short)", "role": "hero / villain / side", "status": "alive or dead — only if this chapter shows it, else empty", "relationships": "ties revealed in THIS chapter, using FULL roster names only and no pronouns, e.g. mother of <full name>; wife of <full name>"}\n` +
   `Then write "${SOURCE_MARKER}" alone on a new line, followed by one JSON object (ENGLISH): {"watermarks": ["every website name, URL, logo banner or scanlation-group credit visible anywhere in the images, e.g. example.net"], "notes": "one short line about the source if relevant, else empty"}. Use an empty array if no such text is visible.`;
+
+// Reference faces ka intro — roster ke baad, chapter images se pehle (lib/gemini.js refParts)
+const FACE_REFS_INTRO =
+  '\n\nFACE REFERENCES: the small images that follow are cropped faces of roster characters taken from earlier chapters, each labelled with the name. ' +
+  'When a face in this chapter\'s panels matches a reference (face shape, eyes, hair, marks) AND the story context fits, use that roster name — even if the clothes, angle, lighting, age-styling or expression differ. ' +
+  'A reference is a strong hint, not proof: if the face clearly differs or the context contradicts it, describe the person instead. The reference images are NOT chapter panels — never narrate them and never count them as an IMAGE.';
 
 const GEMINI_REMINDER =
   '\n\nREMINDER (you have now seen every image): use EXACTLY the roster names from the top; never put a roster name on a hidden or uncertain face; cover every image with its own --- [IMAGE n] --- marker; then append the ===CHARACTERS=== and ===SOURCE=== blocks.';
@@ -279,12 +288,27 @@ app.post('/projects/:pid/chapters/:cid/generate', async (req, res) => {
     const chapterIndex = orderMap[chapter.title] || (project.chapters.findIndex((c) => c.id === cid) + 1) || 1;
     const orderOf = (title) => (orderMap[title] !== undefined ? orderMap[title] : null);
     const roster = store.listCharacters(pid);
+    // Face references: sirf un roster characters ke jo is chapter tak reveal ho chuke (spoiler guard roster block jaisa)
+    const facesMap = store.facesByCharacter(pid);
+    const refParts = [], refNames = [], withFaces = new Set();
+    for (const c of roster) {
+      const list = facesMap[c.id] || [];
+      if (c.pending || !list.length) continue;
+      const fs0 = c.first_seen ? orderOf(c.first_seen) : null;
+      if (fs0 !== null && fs0 !== undefined && fs0 > chapterIndex) continue;
+      const imgs = [];
+      for (const f of list) { try { imgs.push(fs.readFileSync(store.faceFile(f)).toString('base64')); } catch {} }
+      if (!imgs.length) continue;
+      withFaces.add(c.id); refNames.push(`${c.name} (${imgs.length})`);
+      imgs.forEach((data, k) => { refParts.push({ text: `\nREFERENCE FACE ${k + 1} of ${imgs.length} — this is ${c.name}:` }); refParts.push({ inlineData: { mimeType: 'image/jpeg', data } }); });
+    }
+    if (refParts.length) refParts.unshift({ text: FACE_REFS_INTRO });
     const addon = settings.commentaryMode === 'on' ? getCommentaryAddon() : '';
     const notesBlock = (chapter.notes || '').trim()
       ? `\n\nEDITOR NOTES FOR THIS CHAPTER ONLY (apply here, not a permanent rule): ${chapter.notes.trim().slice(0, 1500)}`
       : '';
     const finalPrompt = settings.prompt + addon + buildProjectBlock(project, chapter, chapterIndex, project.chapters.length) +
-      buildRosterBlock(roster, { chapterOrder: chapterIndex, orderOf }) + notesBlock + EXTRACT_INSTRUCTION;
+      buildRosterBlock(roster, { chapterOrder: chapterIndex, orderOf, withFaces }) + notesBlock + EXTRACT_INSTRUCTION;
     const imagePaths = chapter.images.map((img) => path.join(UPLOADS_DIR, pid, cid, img.file)); // file ke naam model ko nahi jaate
     const result = await generateNarration({
       keys: settings.keys,
@@ -293,6 +317,7 @@ app.post('/projects/:pid/chapters/:cid/generate', async (req, res) => {
       prompt: finalPrompt,
       imagePaths,
       reminder: GEMINI_REMINDER,
+      refParts,
       temperature: SCRIPT_TEMPERATURE,
       seed: seedFor(pid + cid),
       // Har API try quota mein count hoti hai (fail bhi Google ke haan count hoti hai)
@@ -324,6 +349,7 @@ app.post('/projects/:pid/chapters/:cid/generate', async (req, res) => {
     }
     flags.parseWarnings = parsed.warnings;
     flags.nameAudit = { unknown: audit.unknown, fixed, jsonOnly: audit.jsonOnly };
+    flags.faceRefs = { count: refParts.filter((p) => p.inlineData).length, names: refNames };
     // PEHLE script save (Gemini ka output kabhi zaya na ho), PHIR roster merge
     store.updateChapter(pid, cid, {
       narration, status: 'done', error: '', flags,
@@ -365,6 +391,45 @@ app.post('/projects/:pid/chapters/:cid/generate', async (req, res) => {
   } finally {
     generating.delete(cid);
   }
+});
+
+// ---------- Face references (per character 1-3 face crops → Gemini ko pehchaan ke liye) ----------
+app.get('/projects/:pid/characters/:chid/faces', async (req, res) => {
+  const { pid, chid } = req.params;
+  const project = store.getProject(pid);
+  const character = project && store.getCharacter(pid, chid);
+  if (!project || !character) return res.status(404).send('Character not found');
+  const chapters = project.chapters;
+  const chapter = chapters.find((c) => c.id === req.query.chapter) || chapters.find((c) => c.images.length) || null;
+  const images = [];
+  if (chapter) {
+    for (let i = 0; i < chapter.images.length; i++) {
+      const img = chapter.images[i];
+      try {
+        const m = await crops.imageMeta(path.join(UPLOADS_DIR, pid, chapter.id, img.file));
+        images.push({ index: i + 1, file: img.file, url: `/uploads/${pid}/${chapter.id}/${img.file}`, width: m.width, height: m.height });
+      } catch {}
+    }
+  }
+  res.render('faces', { project, character, chapters, chapter, images, faces: store.listFaces(pid, chid), maxFaces: store.MAX_FACES });
+});
+app.post('/projects/:pid/characters/:chid/faces', async (req, res) => {
+  const { pid, chid } = req.params;
+  const { chapterId, file, rect } = req.body || {};
+  const chapter = chapterId ? store.getChapter(pid, String(chapterId)) : null;
+  const img = chapter && chapter.images.find((i) => i.file === file);
+  if (!img) return res.status(400).json({ ok: false, error: 'Image not found.' });
+  try {
+    const { rect: sq, buffer } = await crops.renderSquare(path.join(UPLOADS_DIR, pid, chapter.id, img.file), rect || {}, 256);
+    const out = store.addFace(pid, chid, buffer, { chapterId: chapter.id, file: img.file, rect: sq });
+    if (out.error) return res.status(400).json({ ok: false, error: out.error });
+    res.json({ ok: true, face: { id: out.face.id, url: `/faces/${pid}/${chid}/${out.face.id}.jpg` }, count: store.listFaces(pid, chid).length });
+  } catch (err) { res.status(500).json({ ok: false, error: err.message }); }
+});
+app.post('/projects/:pid/characters/:chid/faces/:fid/delete', (req, res) => {
+  const { pid, chid, fid } = req.params;
+  const ok = store.deleteFace(pid, fid);
+  res.json({ ok, count: store.listFaces(pid, chid).length });
 });
 
 // ---------- Characters CRUD ----------

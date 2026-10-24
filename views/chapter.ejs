@@ -576,6 +576,7 @@
     if (ro.ambiguous && ro.ambiguous.length) flagMsgs.push('<i class="ic ic-alert" aria-hidden="true"></i> Ambiguous name' + (ro.ambiguous.length === 1 ? '' : 's') + ' — could be more than one character, so nothing was changed: ' + esc(ro.ambiguous.map((a) => `"${a.name}" → ${a.candidates.join(' or ')}`).join('; ')) + '. Check the script and the <a href="/projects/<%= project.id %>#characters">roster</a>.');
     if (ro.conflicts && ro.conflicts.length) flagMsgs.push('<i class="ic ic-eye" aria-hidden="true"></i> Appearance changed? ' + esc(ro.conflicts.map((c) => `${c.name}: roster says "${c.stored}", this chapter shows "${c.detected}"`).join('; ')) + ' — update the roster if the character really changed (time skip).');
     if (ro.skipped && ro.skipped.length) flagMsgs.push('<i class="ic ic-ban" aria-hidden="true"></i> Skipped (you removed these earlier): ' + esc(ro.skipped.map((x) => x.name).join(', ')) + '.');
+    if (f.faceRefs && f.faceRefs.count) flagMsgs.push('<i class="ic ic-user" aria-hidden="true"></i> Face references sent with this generate: ' + esc(f.faceRefs.names.join(', ')) + '.');
     const fb = $('flagsBox');
     fb.innerHTML = '<ul class="flag-list">' + flagMsgs.map((m) => '<li>' + m + '</li>').join('') + '</ul>';
     fb.classList.toggle('hidden', !flagMsgs.length);
